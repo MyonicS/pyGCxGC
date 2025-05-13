@@ -1,7 +1,7 @@
-site_name: pyGCxGC
+site_name: template
 site_author: YourName
 site_description: >-
-  pyGCxGC Python package for GCxGC data analysis
+  This is the template package!
 nav:
   - Home: index.md
   - Overview:
@@ -30,7 +30,7 @@ nav:
       - example_docs/about/conduct.md
       - example_docs/about/license.md
 
-repo_url: https://github.com/MyonicS/pyGCxGC/
+repo_url: https://github.com/MyonicS/template/
 edit_uri: blob/main/docs/
 
 theme:
@@ -96,5 +96,27 @@ plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
   - autorefs
+  - social
   - offline
   - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          import:
+            - https://docs.python.org/3/objects.inv
+            - https://numpy.org/doc/stable/objects.inv
+          options:
+            docstring_style: numpy
+            docstring_section_style: list
+            separate_signature: true
+            merge_init_into_class: true
+            docstring_options:
+              ignore_init_summary: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            show_if_no_docstring: true
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md

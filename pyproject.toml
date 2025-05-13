@@ -39,9 +39,9 @@ docs = [
 ]
 
 [project.urls]
-repository = "https://github.com/Quantum-Accelerators/template"
-documentation = "https://quantum-accelerators.github.io/template/"
-changelog = "https://github.com/Quantum-Accelerators/template/blob/main/CHANGELOG.md"
+repository = "https://github.com/MyonicS/template"
+documentation = "https://myonics.github.io/template/"
+changelog = "https://github.com/MyonicS/template/blob/main/CHANGELOG.md"
 
 [tool.setuptools.package-data]
 template = ["py.typed"]
