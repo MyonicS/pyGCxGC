@@ -1,4 +1,4 @@
-# template
+# pyGCxGC
 
 [![Tests](https://github.com/username/pyGCxGC/actions/workflows/tests.yaml/badge.svg)](https://github.com/username/pyGCxGC/actions/workflows/tests.yaml)
 
