@@ -17,6 +17,8 @@ pip install .[dev]
 
 As you can see above, it will install specific versions of the dependencies outlined in `/tests/requirements.txt`. Unlike `pyproject.toml`, you want to include specific versions here so that your test suite is reproducible.
 
+The workflow also generates coverage reports in both XML and HTML formats. These reports are uploaded as artifacts and can be accessed from the Actions tab in your GitHub repository. This allows you to track which parts of your code are being tested without requiring external services.
+
 The `/.github/dependabot.yml` file is set up such that [Dependabot](https://docs.github.com/en/code-security/getting-started/dependabot-quickstart-guide) will automatically open pull requests to update any versions in your `/tests/requirements.txt` file as they come out so that your code will always be tested on the newest releases of the various dependencies. This will ensure that your code doesn't break as dependencies update, but if it does, you will know what needs fixing.
 
 ## Documentation

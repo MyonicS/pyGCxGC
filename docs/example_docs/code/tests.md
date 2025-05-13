@@ -16,6 +16,13 @@ When you installed the package with the `[dev]` extras, you installed everything
 
 ## Code Coverage
 
-The `/.codecov.yml` file is a configuration file for [Codecov](https://codecov.io/), which will tell you the fraction of lines covered by your test suite if the GitHub integration is enabled.
+Code coverage is handled directly within the GitHub Actions workflow. The workflow generates HTML coverage reports and XML reports that can be downloaded as artifacts from each CI run.
 
-In order for Codecov to work properly, you will need to make a Codecov account and activate it on your newly made repository. You will also need to add the `CODECOV_TOKEN` [secret](https://docs.codecov.com/docs/adding-the-codecov-token) to your repository.
+When a test run completes, GitHub will store the coverage reports which you can access by:
+
+1. Going to the Actions tab in your GitHub repository
+2. Clicking on the specific workflow run
+3. Scrolling down to the Artifacts section
+4. Downloading the "coverage-report-X.Y" artifact (where X.Y is the Python version)
+
+The coverage reports help you identify which parts of your code are not being tested, allowing you to improve your test suite over time.
