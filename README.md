@@ -4,14 +4,15 @@
   <img src="docs/assets/pyGCxGC_logo-01.svg" alt="pyGCxGC Logo" width="200"/>
 </p>
 
+![Coverage](docs/assets/coverage-badge.svg)
+
 ## Overview
 pyGCxGC is a python package for processing of two dimensional Gas Chromatography (GCxGC) data.
 Presently, it supports generating 2D chromatograms for detectors with one parameter, such as FID.
 
 [![Tests](https://github.com/MyonicS/pyGCxGC/actions/workflows/tests.yaml/badge.svg)](https://github.com/MyonicS/pyGCxGC/actions/workflows/tests.yaml)
-[![Coverage Status](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MyonicS/main/raw/coverage-badge.json)](https://github.com/MyonicS/pyGCxGC/actions)
 [![Test Status](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml/badge.svg?branch=main)](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml)
-[![Coverage](https://img.shields.io/badge/coverage-unknown-lightgrey?style=flat)](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml)
+![Coverage](docs/assets/coverage-badge.svg)
 
 ## Features
 - Load 1D Chromatograms from a csv or a pandas dataframe
