@@ -1,3 +1,4 @@
+from ast import Name
 import pandas as pd
 import pyGCxGC.main as gcgc
 import os
@@ -23,7 +24,8 @@ def parse_2D_chromatogram(
     shift: float = 0, 
     baseline_type: Union[str, Callable] = 'stridewise',
     normalize: str = 'volume', 
-    solvent_cutoff: float = 0
+    solvent_cutoff: float = 0,
+    name: Union[str, None] = None
 ) -> gcgc.GCxGC_FID:
     """
     Parses a 2D chromatogram from input data (frame or file), applies preprocessing steps, and returns a processed 2D chromatogram.
@@ -32,6 +34,7 @@ def parse_2D_chromatogram(
     ----------
     data : pandas.DataFrame or str or os.PathLike
         The input chromatogram data. Can be a pandas DataFrame or a file path to a CSV file.
+        If a DataFrame, it needs to contain the columns 'Ret.Time[s]' and 'Absolute Intensity'.
     modulation_time : float
         The modulation time in seconds.
     sampling_interval : float or str, optional, default='infer'
@@ -49,7 +52,7 @@ def parse_2D_chromatogram(
         - 'max': Normalizes by the maximum intensity.
         - None: No normalization is applied.
     solvent_cutoff : float, optional, default=0
-        The solvent cutoff value. Signals below this value are set to zero.
+        The solvent cutoff time in minutes. Signals below this value are set to zero.
 
     Returns
     -------
@@ -72,10 +75,20 @@ def parse_2D_chromatogram(
     """
     if isinstance(data, pd.DataFrame):
         chrom = data
-        name = 'Chromatogram'
+        if name is None:
+            name = 'Chromatogram'
+        elif type(name) is str:
+            name = name
+        else:
+            raise TypeError(f"name must be a string, not {type(name)}")
     elif isinstance(data, (str, os.PathLike)):
         chrom = parse_csv(data)
-        name = os.path.basename(data)
+        if name is None:
+            name = os.path.basename(data)
+        elif type(name) is str:
+            name = name
+        else:
+            raise TypeError(f"name must be a string, not {type(name)}")
     else:
         raise TypeError(f"data must be a pandas DataFrame or a file path, not {type(data)}")
     
@@ -124,7 +137,7 @@ def parse_2D_chromatogram(
 
 
     # make a 2D chromatogram class
-    Output = gcgc.GCxGC_FID(chrom, chrom_2D, modulation_time, sampling_interval, shift, solvent_cutoff) # type: ignore
+    Output = gcgc.GCxGC_FID(chrom, chrom_2D, modulation_time=modulation_time, sampling_interval=sampling_interval, shift=shift, solvent_cutoff=solvent_cutoff) # type: ignore
     Output.name = name # type: ignore
 
     

@@ -33,7 +33,11 @@ from .main import (
     is_integer_multiple
 )
 
-from .processing import mask_chromatogram
+from .processing import (
+    mask_chromatogram,
+    integrate_2D,
+    integrate_masks
+)
 
 # Define what symbols to export when using "from pyGCxGC import *"
 __all__ = [
@@ -54,5 +58,7 @@ __all__ = [
     "mask_integrate",
     "GCxGC_FID",
     "is_integer_multiple",
-    "mask_chromatogram"
+    "mask_chromatogram",
+    "integrate_2D",
+    "integrate_masks"
 ]

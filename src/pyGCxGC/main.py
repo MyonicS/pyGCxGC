@@ -6,6 +6,8 @@ import os
 import glob
 import scipy.integrate as integrate
 from typing import Union, Callable, Optional, List, Dict, Any, Tuple
+from pyGCxGC.processing import integrate_2D
+
 
 
 #define a GCxGC FID class with attributes: upon initilization only the name is requiered
@@ -45,15 +47,20 @@ def split_solvent(df: pd.DataFrame, solvent_time: Union[int, float] = 0) -> pd.D
     """
     Sets the intensity to 0 for rows in the DataFrame where the retention time is less than or equal to the specified solvent time.
 
-    Parameters:
-    df (pd.DataFrame): The input DataFrame containing chromatographic data. 
-                       It must have columns 'Ret.Time[s]' and 'Absolute Intensity'.
-    solvent_time (Union[int, float]): The retention time threshold below which the intensity will be set to 0.
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input DataFrame containing chromatographic data. 
+        It must have columns 'Ret.Time[s]' and 'Absolute Intensity'.
+    solvent_time : Union[int, float], optional
+        The retention time threshold in minutes below which the intensity will be set to 0.
 
-    Returns:
-    pd.DataFrame: The modified DataFrame with updated intensity values.
+    Returns
+    -------
+    pd.DataFrame
+        The modified DataFrame with updated intensity values.
     """
-    df.loc[df['Ret.Time[s]'] <= solvent_time, 'Absolute Intensity'] = 0
+    df.loc[df['Ret.Time[s]'] <= solvent_time * 60, 'Absolute Intensity'] = 0
     return df
 
 def add_split(df,modulation_time,sampling_interval):#split time in s, sampling interval in ms
@@ -135,8 +142,6 @@ def convert_to2D(df:pd.DataFrame, modulation_time:float)->pd.DataFrame:
     return df_array
 
 
-
-
 def shift_phase(df_array, shift):
     """
     Adjust the phase of a 2D chromatogram by shifting the rows.
@@ -150,15 +155,17 @@ def shift_phase(df_array, shift):
     pandas.DataFrame
         The shifted 2D DataFrame.
     """
+    columns = df_array.columns
+    indices = df_array.index
     df_array_shifted = np.roll(df_array, shift, axis=0)
-    return df_array_shifted
+    return pd.DataFrame(df_array_shifted, index=indices, columns=columns)
 
 import tifffile
 
 
 def normalize_by_volume(df_array):
     """
-    Normalizes the Voume of a 2D chromatogram to 1.
+    Normalizes the Volume of a 2D chromatogram to 1.
     Arguments:
     df_array : pandas.DataFrame
         The input 2D DataFrame representing the chromatogram. Index is the Retention time 2 (y), Columns are the Retention time 1 (x).
@@ -167,12 +174,7 @@ def normalize_by_volume(df_array):
     pandas.DataFrame
         The normalized 2D DataFrame.
     """
-    arrray_for_integral = np.array(df_array)
-    #integrate over rows
-    row_integrated_pre = integrate.trapezoid(arrray_for_integral, axis=0)
-    #integrating the new array
-    integral_non_norm = integrate.trapezoid(row_integrated_pre, axis=0)
-    df_array_norm = df_array/integral_non_norm
+    df_array_norm = df_array/integrate_2D(df_array)
     return df_array_norm
     
 def integrate_masked(df_norm_array, maskpath):
