@@ -3,9 +3,6 @@
 <p align="center">
   <img src="docs/assets/pyGCxGC_logo-01.svg" alt="pyGCxGC Logo" width="200"/>
 </p>
-
-![Coverage](docs/assets/coverage-badge.svg)
-
 ## Overview
 pyGCxGC is a python package for processing of two dimensional Gas Chromatography (GCxGC) data.
 Presently, it supports generating 2D chromatograms for detectors with one parameter, such as FID.

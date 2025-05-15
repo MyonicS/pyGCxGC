@@ -45,7 +45,7 @@ jobs:
           echo "COVERAGE_CORE=sysmon" >> $GITHUB_ENV
 
       - name: Run tests with pytest
-        run: pytest --cov=template --cov-report=xml --cov-report=html
+        run: pytest --cov=pyGCxGC --cov-report=xml --cov-report=html
 
       - name: Upload coverage reports to GitHub
         uses: actions/upload-artifact@v4
