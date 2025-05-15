@@ -13,6 +13,7 @@ except:
 # Import and expose key modules
 from . import parsing
 from . import main
+from . import processing
 
 # Explicitly import the commonly used functions from each module
 from .parsing import (
@@ -32,12 +33,14 @@ from .main import (
     is_integer_multiple
 )
 
+from .processing import mask_chromatogram
 
 # Define what symbols to export when using "from pyGCxGC import *"
 __all__ = [
     # Modules
     "parsing", 
     "main",
+    "processing",
     # Parsing functions
     "parse_2D_chromatogram",
     "parse_csv",
@@ -50,5 +53,6 @@ __all__ = [
     "normalize_by_volume",
     "mask_integrate",
     "GCxGC_FID",
-    "is_integer_multiple"
+    "is_integer_multiple",
+    "mask_chromatogram"
 ]
