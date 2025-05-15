@@ -1,3 +1,7 @@
 numpy==2.2.3
 pytest==8.0.0
 pytest-cov==4.1.0
+matplotlib
+scipy
+tifffile
+pandas
