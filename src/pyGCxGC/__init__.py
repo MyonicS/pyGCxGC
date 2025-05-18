@@ -39,6 +39,9 @@ from .processing import (
     integrate_masks
 )
 
+# Import GUI functions
+from .mask_gui import launch_mask_creator
+
 # Define what symbols to export when using "from pyGCxGC import *"
 __all__ = [
     # Modules
@@ -60,5 +63,7 @@ __all__ = [
     "is_integer_multiple",
     "mask_chromatogram",
     "integrate_2D",
-    "integrate_masks"
+    "integrate_masks",
+    # GUI functions
+    "launch_mask_creator"
 ]

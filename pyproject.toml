@@ -27,7 +27,7 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy",
     "pandas",
-    "matplotlib",
+    "matplotlib>=3.7.0",
     "scipy",
     "tifffile"
 ]
@@ -47,6 +47,9 @@ docs = [
 repository = "https://github.com/MyonicS/pyGCxGC"
 documentation = "https://myonics.github.io/pyGCxGC/"
 changelog = "https://github.com/MyonicS/pyGCxGC/blob/main/CHANGELOG.md"
+
+[project.scripts]
+pygcxgc-maskcreator = "pyGCxGC.mask_gui:launch_mask_creator"
 
 [tool.setuptools.package-data]
 pyGCxGC = ["py.typed"]
