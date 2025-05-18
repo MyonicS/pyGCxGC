@@ -11,9 +11,10 @@ nav:
       - example_docs/setup/prep.md
       - example_docs/setup/name.md
       - example_docs/setup/basics.md
-  - Installation:
-      - example_docs/installation/pyproject.md
-      - example_docs/installation/install.md
+  - Getting started:
+      - example_docs/install.md
+      - notebooks/Develop_notebook.ipynb
+
   - Code:
       - example_docs/code/source.md
       - example_docs/code/hints.md
@@ -97,4 +98,5 @@ plugins:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
   - autorefs
   - offline
+  - mkdocs-jupyter
   - mkdocstrings:

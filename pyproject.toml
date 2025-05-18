@@ -44,15 +44,15 @@ docs = [
 ]
 
 [project.urls]
-repository = "https://github.com/MyonicS/template"
-documentation = "https://myonics.github.io/template/"
-changelog = "https://github.com/MyonicS/template/blob/main/CHANGELOG.md"
+repository = "https://github.com/MyonicS/pyGCxGC"
+documentation = "https://myonics.github.io/pyGCxGC/"
+changelog = "https://github.com/MyonicS/pyGCxGC/blob/main/CHANGELOG.md"
 
 [tool.setuptools.package-data]
-template = ["py.typed"]
+pyGCxGC = ["py.typed"]
 
 [tool.pyright]
-include = ["template"]
+include = ["pyGCxGC"]
 exclude = ["**/__pycache__"]
 
 
@@ -140,7 +140,7 @@ lint.unfixable = [
   "F841", # Removes unused variables
 ]
 lint.pydocstyle.convention = "numpy"
-lint.isort.known-first-party = ["template"]
+lint.isort.known-first-party = ["pyGCxGC"]
 lint.isort.required-imports = ["from __future__ import annotations"]
 lint.isort.split-on-trailing-comma=false
 extend-include = ["*.ipynb"]
