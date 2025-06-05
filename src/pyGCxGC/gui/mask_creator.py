@@ -12,7 +12,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import matplotlib.patches as patches
-from matplotlib.widgets import RectangleSelector, LassoSelector
+from matplotlib.widgets import RectangleSelector, LassoSelector, PolygonSelector
 from matplotlib.path import Path
 import tifffile
 import traceback
@@ -89,7 +89,7 @@ class MaskCreatorGUI:
     
     This class provides a graphical interface for:
     - Loading and displaying 2D chromatograms
-    - Drawing masks using different tools (rectangle, lasso)
+    - Drawing masks using different tools (rectangle, lasso, polygon)
     - Saving masks as .tif files for use with pyGCxGC
     """
     
@@ -127,6 +127,9 @@ class MaskCreatorGUI:
         self.selector = None
         self.selected_points = []
         self.current_mask_color = 'red'
+        
+        # Create a reference for the polygon selector (separate from main selector)
+        self.polygon_selector = None
         
         # Create a reference for the colorbar
         self.cbar = None
@@ -201,6 +204,16 @@ class MaskCreatorGUI:
         lasso_btn.pack(anchor=tk.W, pady=2)
         create_tooltip(lasso_btn, "Draw freeform selections on the chromatogram")
         
+        polygon_btn = ttk.Radiobutton(
+            draw_frame, 
+            text="Polygon",
+            variable=self.drawing_mode,
+            value="polygon",
+            command=self._update_selector
+        )
+        polygon_btn.pack(anchor=tk.W, pady=2)
+        create_tooltip(polygon_btn, "Draw polygon selections with straight line segments on the chromatogram")
+        
         # Clear button
         clear_btn = ttk.Button(
             draw_frame, 
@@ -265,6 +278,9 @@ class MaskCreatorGUI:
         help_text = (
             "1. Load a chromatogram\n"
             "2. Select drawing tool\n"
+            "   - Rectangle: Click and drag\n"
+            "   - Lasso: Free-form drawing\n"
+            "   - Polygon: Click to add points\n"
             "3. Draw on the chromatogram\n"
             "4. Add selection to mask\n"
             "5. Save mask as .tif\n\n"
@@ -397,7 +413,7 @@ class MaskCreatorGUI:
         # Create a single colorbar
         # This is the only place we create a colorbar in the entire application
         self.cbar = self.fig.colorbar(im, ax=self.ax)
-        self.cbar.set_label('Signal Intensity (sqrt)')
+        self.cbar.set_label(r'$\sqrt{\mathrm{intensity}}$')
         
         # Set labels
         self.ax.set_xlabel('Retention time 1 (min)')
@@ -431,13 +447,20 @@ class MaskCreatorGUI:
         if self.chromatogram is None:
             return
         
-        # Remove existing selector if any
+        # Remove existing selector and polygon selector if any
         if self.selector is not None:
             try:
                 self.selector.disconnect_events()
             except:
                 pass
             self.selector = None
+            
+        if hasattr(self, 'polygon_selector') and self.polygon_selector is not None:
+            try:
+                self.polygon_selector.disconnect_events()
+            except:
+                pass
+            self.polygon_selector = None
         
         # Create new selector based on current mode
         if self.drawing_mode.get() == "rectangle":
@@ -449,14 +472,49 @@ class MaskCreatorGUI:
                 minspanx=5, 
                 minspany=5,
                 spancoords='pixels',
-                interactive=True
+                interactive=True,
+                props=dict(color='white', alpha=0.2, fill=True)  # Use default button behavior
             )
         elif self.drawing_mode.get() == "lasso":
             self.selector = LassoSelector(
                 self.ax, 
                 self._on_lasso_select,
-                button=None  # Use default button behavior
+                button=None,
+                props=dict(color='white')  # Use default button behavior
             )
+        elif self.drawing_mode.get() == "polygon":
+            try:
+                # Create polygon selector with a handler that can be modified
+                self.polygon_selector = PolygonSelector(
+                    self.ax,
+                    lambda verts: None,  # Just a placeholder
+                    useblit=True,
+                    props=dict(color='white')
+                )
+                
+                # Store original verts property getter
+                original_verts_property = type(self.polygon_selector).verts
+                
+                # Define a handler that will be called when we add to mask
+                def get_polygon_vertices():
+                    # Get the vertices from the polygon selector
+                    if hasattr(self.polygon_selector, 'verts'):
+                        vertices = self.polygon_selector.verts
+                        if vertices and len(vertices) > 0:
+                            # Set the selected points with the vertices
+                            self.selected_points = {"type": "polygon", "vertices": vertices}
+                            return True
+                    return False
+                
+                # Store the handler for later use
+                self.get_polygon_vertices = get_polygon_vertices
+                
+                # Set as the current selector
+                self.selector = self.polygon_selector
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to create polygon selector: {str(e)}")
+                traceback.print_exc()
+                self.status_var.set("Error creating polygon selector")
     
     def _on_rectangle_select(self, eclick, erelease):
         """Callback for rectangle selection"""
@@ -464,8 +522,9 @@ class MaskCreatorGUI:
         x1, y1 = eclick.xdata, eclick.ydata
         x2, y2 = erelease.xdata, erelease.ydata
         
-        # Store the selection for later use
-        self.selected_points = [(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))]
+        # Store the selection for later use - we're storing as a special format for rectangles
+        # to differentiate from polygon/lasso vertices
+        self.selected_points = {"type": "rectangle", "coords": [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]}
         
         # Update status bar
         area_rt1 = abs(x2 - x1)  # RT1 in minutes
@@ -474,12 +533,56 @@ class MaskCreatorGUI:
     
     def _on_lasso_select(self, vertices):
         """Callback for lasso selection"""
-        # Store the lasso path
-        self.selected_points = vertices
+        # Store the lasso path with type identifier
+        self.selected_points = {"type": "lasso", "vertices": vertices}
         
         # Update status bar
         num_points = len(vertices)
         self.status_var.set(f"Lasso selection with {num_points} vertices completed")
+    
+    def _on_polygon_select(self, xdata, ydata):
+        """Callback for polygon selection"""
+        # Store the polygon vertices as a list of (x,y) pairs with type identifier
+        vertices = list(zip(xdata, ydata))
+        self.selected_points = {"type": "polygon", "vertices": vertices}
+        
+        # Update status bar
+        num_points = len(vertices)
+        self.status_var.set(f"Polygon selection with {num_points} vertices completed")
+    
+    def _on_polygon_callback(self, vertices):
+        """
+        Callback for polygon selector which takes vertices directly
+        This is needed because PolygonSelector may pass vertices in a different format
+        depending on matplotlib version
+        """
+        # If vertices is already a list of points (x,y), use it directly
+        if len(vertices) > 0 and isinstance(vertices[0], (list, tuple)):
+            self.selected_points = {"type": "polygon", "vertices": vertices}
+        # If it's an array of shape (n,2), convert to list of tuples
+        elif hasattr(vertices, 'shape') and len(vertices.shape) == 2 and vertices.shape[1] == 2:
+            self.selected_points = {"type": "polygon", "vertices": list(map(tuple, vertices))}
+        # Otherwise try to interpret vertices as x,y arrays
+        else:
+            try:
+                # Try to extract x and y from vertices
+                if hasattr(vertices, 'verts'):
+                    # Some versions provide vertices.verts
+                    vertex_points = vertices.verts
+                else:
+                    # Assume vertices is the points directly
+                    vertex_points = vertices
+                
+                self.selected_points = {"type": "polygon", "vertices": list(map(tuple, vertex_points))}
+            except Exception as e:
+                print(f"Error converting vertices: {e}")
+                traceback.print_exc()
+                # Fallback - just store whatever we got
+                self.selected_points = {"type": "polygon", "vertices": vertices}
+        
+        # Update status bar
+        num_points = len(self.selected_points["vertices"])
+        self.status_var.set(f"Polygon selection with {num_points} vertices completed")
     
     def _clear_selection(self):
         """Clear the current selection"""
@@ -507,6 +610,14 @@ class MaskCreatorGUI:
             messagebox.showwarning("Warning", "Please load a chromatogram and create a mask first")
             return
         
+        # For polygon selection, get vertices from the active polygon selector
+        if self.drawing_mode.get() == "polygon" and hasattr(self, "get_polygon_vertices"):
+            # Update the selected_points from the polygon selector
+            if not self.get_polygon_vertices():
+                messagebox.showwarning("Warning", "No polygon vertices found")
+                return
+        
+        # Now check if we have selected points
         if not self.selected_points:
             messagebox.showwarning("Warning", "No selection to add")
             return
@@ -530,59 +641,77 @@ class MaskCreatorGUI:
                                             (self.chromatogram.limits[3] - self.chromatogram.limits[2]) * 
                                             self.chromatogram.chrom_2D.shape[0])
             
-            # Apply the selection to the mask based on the drawing mode
-            if self.drawing_mode.get() == "rectangle" and self.selected_points:
-                # Get rectangle coordinates
-                x1, y1, x2, y2 = self.selected_points[0]
+            # Apply the selection to the mask based on the type of selected points we have
+            if isinstance(self.selected_points, dict) and "type" in self.selected_points:
+                selection_type = self.selected_points["type"]
                 
-                # Convert to array indices
-                x1_idx = max(0, min(data_to_array_x(x1), self.mask.shape[1]-1))
-                y1_idx = max(0, min(data_to_array_y(y1), self.mask.shape[0]-1))
-                x2_idx = max(0, min(data_to_array_x(x2), self.mask.shape[1]-1))
-                y2_idx = max(0, min(data_to_array_y(y2), self.mask.shape[0]-1))
+                if selection_type == "rectangle":
+                    try:
+                        # Get rectangle coordinates from the two corner points
+                        (x1, y1), (x2, y2) = self.selected_points["coords"]
+                        
+                        # Convert to array indices
+                        x1_idx = max(0, min(data_to_array_x(x1), self.mask.shape[1]-1))
+                        y1_idx = max(0, min(data_to_array_y(y1), self.mask.shape[0]-1))
+                        x2_idx = max(0, min(data_to_array_x(x2), self.mask.shape[1]-1))
+                        y2_idx = max(0, min(data_to_array_y(y2), self.mask.shape[0]-1))
+                        
+                        # Make sure x1_idx <= x2_idx and y1_idx <= y2_idx
+                        x1_idx, x2_idx = min(x1_idx, x2_idx), max(x1_idx, x2_idx)
+                        y1_idx, y2_idx = min(y1_idx, y2_idx), max(y1_idx, y2_idx)
+                        
+                        # Set the rectangle area to 1 in the mask
+                        temp_mask[y1_idx:y2_idx+1, x1_idx:x2_idx+1] = 1
+                        self.status_var.set(f"Added rectangle selection to mask ({x2_idx-x1_idx+1}x{y2_idx-y1_idx+1} pixels)")
+                    except Exception as e:
+                        messagebox.showerror("Error", f"Failed to process rectangle selection: {str(e)}")
+                        traceback.print_exc()
+                        self.status_var.set("Error processing rectangle selection")
+                        return
                 
-                # Make sure x1_idx <= x2_idx and y1_idx <= y2_idx
-                x1_idx, x2_idx = min(x1_idx, x2_idx), max(x1_idx, x2_idx)
-                y1_idx, y2_idx = min(y1_idx, y2_idx), max(y1_idx, y2_idx)
-                
-                # Set the rectangle area to 1 in the mask
-                temp_mask[y1_idx:y2_idx+1, x1_idx:x2_idx+1] = 1
-                self.status_var.set(f"Added rectangle selection to mask ({x2_idx-x1_idx+1}x{y2_idx-y1_idx+1} pixels)")
-                
-            elif self.drawing_mode.get() == "lasso" and self.selected_points:
-                try:
-                    # Create a Path from the lasso vertices
-                    path = Path(self.selected_points)
-                    
-                    # Create a grid of points
-                    y, x = np.mgrid[:self.mask.shape[0], :self.mask.shape[1]]
-                    points = np.vstack((x.flatten(), y.flatten())).T
-                    
-                    # Get array to data transform for points
-                    array_to_data_x = lambda x: self.chromatogram.limits[0] + (x / self.mask.shape[1]) * (self.chromatogram.limits[1] - self.chromatogram.limits[0])
-                    
-                    # Invert the y coordinate to match the display orientation
-                    array_to_data_y = lambda y: self.chromatogram.limits[3] - (y / self.mask.shape[0]) * (self.chromatogram.limits[3] - self.chromatogram.limits[2])
-                    
-                    # Transform points to data coordinates
-                    points_data = np.vstack((array_to_data_x(points[:, 0]), array_to_data_y(points[:, 1]))).T
-                    
-                    # Check which points are inside the path
-                    mask_points = path.contains_points(points_data)
-                    mask_points = mask_points.reshape(self.mask.shape)
-                    
-                    # Set the lasso area to 1 in the mask
-                    temp_mask[mask_points] = 1
-                    
-                    # Count the number of points added
-                    num_added = np.sum(mask_points)
-                    self.status_var.set(f"Added lasso selection to mask ({num_added} pixels)")
-                    
-                except Exception as e:
-                    messagebox.showerror("Error", f"Failed to process lasso selection: {str(e)}")
-                    traceback.print_exc()
-                    self.status_var.set("Error processing lasso selection")
+                elif selection_type in ["lasso", "polygon"]:
+                    try:
+                        # Get the vertices
+                        vertices = self.selected_points["vertices"]
+                        
+                        # Create a Path from the vertices
+                        path = Path(vertices)
+                        
+                        # Create a grid of points
+                        y, x = np.mgrid[:self.mask.shape[0], :self.mask.shape[1]]
+                        points = np.vstack((x.flatten(), y.flatten())).T
+                        
+                        # Get array to data transform for points
+                        array_to_data_x = lambda x: self.chromatogram.limits[0] + (x / self.mask.shape[1]) * (self.chromatogram.limits[1] - self.chromatogram.limits[0])
+                        
+                        # Invert the y coordinate to match the display orientation
+                        array_to_data_y = lambda y: self.chromatogram.limits[3] - (y / self.mask.shape[0]) * (self.chromatogram.limits[3] - self.chromatogram.limits[2])
+                        
+                        # Transform points to data coordinates
+                        points_data = np.vstack((array_to_data_x(points[:, 0]), array_to_data_y(points[:, 1]))).T
+                        
+                        # Check which points are inside the path
+                        mask_points = path.contains_points(points_data)
+                        mask_points = mask_points.reshape(self.mask.shape)
+                        
+                        # Set the selected area to 1 in the mask
+                        temp_mask[mask_points] = 1
+                        
+                        # Count the number of points added
+                        num_added = np.sum(mask_points)
+                        self.status_var.set(f"Added {selection_type} selection to mask ({num_added} pixels)")
+                        
+                    except Exception as e:
+                        messagebox.showerror("Error", f"Failed to process {selection_type} selection: {str(e)}")
+                        traceback.print_exc()
+                        self.status_var.set(f"Error processing {selection_type} selection")
+                        return
+                else:
+                    messagebox.showerror("Error", f"Unknown selection type: {selection_type}")
                     return
+            else:
+                messagebox.showerror("Error", "Invalid selection format")
+                return
             
             # Update the mask
             self.mask = temp_mask

@@ -39,8 +39,16 @@ from .processing import (
     integrate_masks
 )
 
-# Import GUI functions
-from .mask_gui import launch_mask_creator
+# Import GUI functions only if tkinter is available
+try:
+    from .mask_gui import launch_mask_creator
+except ImportError:
+    # Define a placeholder function that raises a more informative error
+    def launch_mask_creator():
+        raise ImportError(
+            "The GUI functionality requires tkinter which is not installed. "
+            "Please install tkinter on your system to use this feature."
+        )
 
 # Define what symbols to export when using "from pyGCxGC import *"
 __all__ = [
