@@ -26,12 +26,29 @@ There are several ways to start the Mask Creator GUI:
 2. Select a CSV file containing chromatogram data
 3. Enter the modulation time in seconds when prompted
 
+### Adjusting the Display
+
+The **Plotting** section allows you to customize how the chromatogram is displayed. The controls are arranged in a compact side-by-side layout to minimize vertical space:
+
+#### Shift Adjustment (Left Column)
+- Enter a shift value (integer) to adjust the phase of the chromatogram
+- This helps align features for better visualization
+
+#### Transform Options (Right Column)
+Choose how intensity data is displayed:
+- **Raw**: Original intensity values (best for quantitative analysis)
+- **Square Root**: Square root of intensity values (default, good contrast)
+- **Third Root**: Third root of intensity values (emphasizes low-intensity features)
+
+Click **Apply** to apply both shift and transform changes to the display.
+
 ### Drawing a Mask
 
-The GUI provides two drawing tools:
+The GUI provides three drawing tools:
 
 - **Rectangle**: Click and drag to create a rectangular selection
-- **Lasso**: Click and drag to create a free-form selection
+- **Lasso**: Click and drag to create a free-form selection  
+- **Polygon**: Click to add points, close by clicking near the first point
 
 To add the selection to the mask, click "Add Selection to Mask".
 
@@ -53,19 +70,26 @@ The status bar at the bottom of the window provides information about:
 
 #### Colorbar
 
-A colorbar shows the signal intensity scale for the chromatogram display. The scale uses the square root of intensity values to better visualize the dynamic range.
+A colorbar shows the signal intensity scale for the chromatogram display. The scale and label automatically adjust based on the selected transform mode:
+- Raw: Shows original intensity values
+- Square Root: Shows square root of intensity values (default)
+- Third Root: Shows third root of intensity values
 
 ### Common Tasks
 
 #### Creating a New Mask
 
 1. Load a chromatogram
-2. Enter a name for your mask in the "Mask Name" field
-3. Select a drawing tool (Rectangle or Lasso)
-4. Draw on the chromatogram by clicking and dragging
-5. Click "Add Selection to Mask" to add the selection to your mask
-6. Repeat steps 3-5 to build up a complex mask
-7. Save the mask when finished
+2. (Optional) Adjust plotting settings:
+   - Set shift value if needed
+   - Choose transform mode (Raw, Square Root, or Third Root)
+   - Click "Apply" to update the display
+3. Enter a name for your mask in the "Mask Name" field
+4. Select a drawing tool (Rectangle, Lasso, or Polygon)
+5. Draw on the chromatogram by clicking and dragging
+6. Click "Add Selection to Mask" to add the selection to your mask
+7. Repeat steps 4-6 to build up a complex mask
+8. Save the mask when finished
 
 #### Loading and Editing an Existing Mask
 

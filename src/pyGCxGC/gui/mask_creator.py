@@ -111,6 +111,7 @@ class MaskCreatorGUI:
         
         # Variables to store data
         self.chromatogram = None  # Will hold the GCxGC_FID object
+        self.original_chromatogram = None  # Will hold the original unshifted chromatogram
         self.mask = None          # Will hold the current mask
         self.mask_name = tk.StringVar(value="New Mask")
         
@@ -119,6 +120,12 @@ class MaskCreatorGUI:
         
         # Current drawing mode
         self.drawing_mode = tk.StringVar(value="rectangle")
+        
+        # Shift value for phase adjustment
+        self.shift_value = tk.IntVar(value=0)
+        
+        # Transform option for chromatogram display
+        self.transform_mode = tk.StringVar(value="square root")
         
         # Setup UI
         self._create_ui()
@@ -178,6 +185,72 @@ class MaskCreatorGUI:
         # Display current chromatogram
         self.chrom_name_label = ttk.Label(chrom_frame, text="No chromatogram loaded")
         self.chrom_name_label.pack(fill=tk.X, pady=5)
+        
+        # Plotting section
+        plotting_frame = ttk.LabelFrame(parent, text="Plotting", padding=10)
+        plotting_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Create a two-column layout for compact arrangement
+        control_frame = ttk.Frame(plotting_frame)
+        control_frame.pack(fill=tk.X, pady=5)
+        
+        # Left column - Shift controls
+        shift_frame = ttk.Frame(control_frame)
+        shift_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        ttk.Label(shift_frame, text="Shift:").pack(anchor=tk.W, pady=2)
+        shift_entry = ttk.Entry(
+            shift_frame, 
+            textvariable=self.shift_value,
+            width=8
+        )
+        shift_entry.pack(fill=tk.X, pady=2)
+        create_tooltip(shift_entry, "Enter shift value (integer) to adjust phase of the chromatogram")
+        
+        # Right column - Transform controls
+        transform_frame = ttk.Frame(control_frame)
+        transform_frame.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(5, 0))
+        
+        ttk.Label(transform_frame, text="Transform:").pack(anchor=tk.W, pady=2)
+        
+        transform_raw_btn = ttk.Radiobutton(
+            transform_frame, 
+            text="Raw",
+            variable=self.transform_mode,
+            value="raw",
+            command=self._update_transform
+        )
+        transform_raw_btn.pack(anchor=tk.W, pady=1)
+        create_tooltip(transform_raw_btn, "Display raw chromatogram data without transformation")
+        
+        transform_sqrt_btn = ttk.Radiobutton(
+            transform_frame, 
+            text="Square Root",
+            variable=self.transform_mode,
+            value="square root",
+            command=self._update_transform
+        )
+        transform_sqrt_btn.pack(anchor=tk.W, pady=1)
+        create_tooltip(transform_sqrt_btn, "Display square root of chromatogram data (default)")
+        
+        transform_thirdroot_btn = ttk.Radiobutton(
+            transform_frame, 
+            text="Third Root",
+            variable=self.transform_mode,
+            value="third root",
+            command=self._update_transform
+        )
+        transform_thirdroot_btn.pack(anchor=tk.W, pady=1)
+        create_tooltip(transform_thirdroot_btn, "Display third root of chromatogram data")
+        
+        # Apply button spanning the full width at the bottom
+        apply_shift_btn = ttk.Button(
+            plotting_frame, 
+            text="Apply", 
+            command=self._apply_shift
+        )
+        apply_shift_btn.pack(fill=tk.X, pady=(10, 5))
+        create_tooltip(apply_shift_btn, "Apply the shift and transform to the original chromatogram and update the display")
         
         # Drawing tools section
         draw_frame = ttk.LabelFrame(parent, text="Drawing Tools", padding=10)
@@ -277,13 +350,17 @@ class MaskCreatorGUI:
         
         help_text = (
             "1. Load a chromatogram\n"
-            "2. Select drawing tool\n"
+            "2. (Optional) Adjust plotting\n"
+            "   - Enter shift value\n"
+            "   - Select transform (raw, sqrt, 3rd root)\n"
+            "   - Click Apply\n"
+            "3. Select drawing tool\n"
             "   - Rectangle: Click and drag\n"
             "   - Lasso: Free-form drawing\n"
             "   - Polygon: Click to add points\n"
-            "3. Draw on the chromatogram\n"
-            "4. Add selection to mask\n"
-            "5. Save mask as .tif\n\n"
+            "4. Draw on the chromatogram\n"
+            "5. Add selection to mask\n"
+            "6. Save mask as .tif\n\n"
             "Pan/Zoom: Use toolbar"
         )
         ttk.Label(help_frame, text=help_text, justify=tk.LEFT).pack(fill=tk.X)
@@ -368,6 +445,16 @@ class MaskCreatorGUI:
                 sampling_interval='infer'
             )
             
+            # Store the original chromatogram for shift functionality
+            self.original_chromatogram = gcgc.parse_2D_chromatogram(
+                file_path, 
+                modulation_time=modulation_time,
+                sampling_interval='infer'
+            )
+            
+            # Reset shift value to 0 when loading new chromatogram
+            self.shift_value.set(0)
+            
             # Update UI
             self.chrom_name_label.config(text=f"Loaded: {self.chromatogram.name}")
             
@@ -401,9 +488,25 @@ class MaskCreatorGUI:
         # Recreate the axes
         self.ax = self.fig.add_subplot(111)
         
+        # Apply transform based on selected mode
+        transform = self.transform_mode.get()
+        if transform == "raw":
+            transformed_data = self.chromatogram.chrom_2D
+            intensity_label = r'$\mathrm{intensity}$'
+        elif transform == "square root":
+            transformed_data = np.sqrt(self.chromatogram.chrom_2D)
+            intensity_label = r'$\sqrt{\mathrm{intensity}}$'
+        elif transform == "third root":
+            transformed_data = np.power(self.chromatogram.chrom_2D, 1/3)
+            intensity_label = r'$\sqrt[3]{\mathrm{intensity}}$'
+        else:
+            # Default to square root if unknown transform
+            transformed_data = np.sqrt(self.chromatogram.chrom_2D)
+            intensity_label = r'$\sqrt{\mathrm{intensity}}$'
+        
         # Plot the chromatogram
         im = self.ax.imshow(
-            np.sqrt(self.chromatogram.chrom_2D), 
+            transformed_data, 
             cmap='viridis', 
             extent=tuple(self.chromatogram.limits),
             interpolation='bilinear', 
@@ -413,7 +516,7 @@ class MaskCreatorGUI:
         # Create a single colorbar
         # This is the only place we create a colorbar in the entire application
         self.cbar = self.fig.colorbar(im, ax=self.ax)
-        self.cbar.set_label(r'$\sqrt{\mathrm{intensity}}$')
+        self.cbar.set_label(intensity_label)
         
         # Set labels
         self.ax.set_xlabel('Retention time 1 (min)')
@@ -600,9 +703,9 @@ class MaskCreatorGUI:
         # Create an empty mask with the same dimensions as the chromatogram
         self.mask = np.zeros_like(self.chromatogram.chrom_2D, dtype=np.uint8)
         
-        # Update display
-        self._display_chromatogram()
-        messagebox.showinfo("Info", "New empty mask created")
+        # # Update display
+        # self._display_chromatogram()
+        # messagebox.showinfo("Info", "New empty mask created")
     
     def _add_to_mask(self):
         """Add the current selection to the mask"""
@@ -883,6 +986,12 @@ class MaskCreatorGUI:
             # Update UI to show the selected chromatogram
             self.chrom_name_label.config(text=f"Loaded: {self.chromatogram.name}")
             
+            # Store the original chromatogram for shift functionality  
+            self.original_chromatogram = self.chromatogram
+            
+            # Reset shift value to 0 when loading new chromatogram
+            self.shift_value.set(0)
+            
             # Initialize an empty mask
             self._create_new_mask()
             
@@ -893,6 +1002,62 @@ class MaskCreatorGUI:
             messagebox.showerror("Error", f"Failed to use workspace chromatogram: {str(e)}")
             import traceback
             traceback.print_exc()
+    
+    def _apply_shift(self):
+        """Apply shift to the original chromatogram and update display"""
+        if self.original_chromatogram is None:
+            messagebox.showwarning("Warning", "Please load a chromatogram first")
+            return
+        
+        try:
+            shift = self.shift_value.get()
+            self.status_var.set(f"Applying shift of {shift} to chromatogram...")
+            
+            # Import the shift_phase function from main module
+            from pyGCxGC.main import shift_phase
+            
+            # Apply shift to the original chromatogram data
+            if shift == 0:
+                # No shift needed, use original data
+                shifted_chrom_2d = self.original_chromatogram.chrom_2D
+            else:
+                shifted_chrom_2d = shift_phase(self.original_chromatogram.chrom_2D, shift)
+            
+            # Create a new chromatogram object with the shifted data
+            # Import the GCxGC_FID class to create a new instance
+            import pyGCxGC.main as gcgc_main
+            
+            # Create new chromatogram with shifted data
+            self.chromatogram = gcgc_main.GCxGC_FID(
+                chrom_1D=self.original_chromatogram.chrom_1D,
+                chrom_2D=shifted_chrom_2d,
+                sampling_interval=self.original_chromatogram.sampling_interval,
+                modulation_time=self.original_chromatogram.modulation_time,
+                shift=shift,
+                solvent_cutoff=self.original_chromatogram.solvent_cutoff
+            )
+            
+            # Copy other attributes
+            self.chromatogram.name = self.original_chromatogram.name
+            self.chromatogram.date = self.original_chromatogram.date
+            self.chromatogram.limits = self.original_chromatogram.limits
+            
+            # Update display
+            self._display_chromatogram()
+            
+            if shift == 0:
+                self.status_var.set("Reset to original chromatogram (no shift)")
+            else:
+                self.status_var.set(f"Shift of {shift} applied successfully")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to apply shift: {str(e)}")
+            self.status_var.set("Error applying shift")
+    
+    def _update_transform(self):
+        """Update the display when transform mode changes"""
+        if self.chromatogram is not None:
+            self._display_chromatogram()
 
 
 def run_mask_creator():
