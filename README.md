@@ -3,6 +3,7 @@
 <p align="center">
   <img src="docs/assets/pyGCxGC_logo-01.svg" alt="pyGCxGC Logo" width="200"/>
 </p>
+
 ## Overview
 pyGCxGC is a python package for processing of two dimensional Gas Chromatography (GCxGC) data.
 Presently, it supports generating 2D chromatograms for detectors with one parameter, such as FID.
@@ -15,6 +16,7 @@ Presently, it supports generating 2D chromatograms for detectors with one parame
 - Load 1D Chromatograms from a csv or a pandas dataframe
 - Generate 2D Chromatograms
 - Integrate areas in 2D Chromatograms using .tif masks
+- GUI for generation of masks
 
 > **⚠️ WARNING**: pyGCxGC is under active development. Braking changes can occur. Please report any issues using the [Issue Tracker](https://github.com/MyonicS/pyGCxGC/issues).
 
@@ -100,8 +102,10 @@ pygcxgc-maskcreator
 
 The GUI provides tools to:
 - Load and visualize 2D chromatograms
-- Draw masks using rectangle or lasso selection tools
+- Draw masks using selection tools
 - Add/remove selections to/from masks
 - Save masks as .tif files for later use with pyGCxGC's masking functions
 
 For a detailed tutorial on using the Mask Creator GUI, see the `Mask_Creator_GUI.ipynb` notebook in the docs.
+
+For a finer control of the masks, you can use image processing software such as ImageJ.

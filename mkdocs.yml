@@ -28,7 +28,6 @@ nav:
   - Code Documentation: reference/ # keep me!
   - About:
       - example_docs/about/changelog.md
-      - example_docs/about/conduct.md
       - example_docs/about/license.md
 
 repo_url: https://github.com/MyonicS/pyGCxGC/
@@ -80,7 +79,12 @@ markdown_extensions:
   - pymdownx.keys
   - pymdownx.magiclink
   - pymdownx.mark
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: 
+        - '.'
+      url_download: true
+      url_max_size: 0
+      url_timeout: 10.0
   - pymdownx.smartsymbols
   - pymdownx.superfences:
       custom_fences:
@@ -96,7 +100,18 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
   - autorefs
   - offline
-  - mkdocs-jupyter
-  - mkdocstrings:
+  - mkdocs-jupyter:
+      ignore:
+        - "docs/gen_ref_pages.py"

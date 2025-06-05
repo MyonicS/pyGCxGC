@@ -41,7 +41,7 @@ from .processing import (
 
 # Import GUI functions only if tkinter is available
 try:
-    from .mask_gui import launch_mask_creator
+    from .mask_gui import launch_mask_creator # type: ignore
 except ImportError:
     # Define a placeholder function that raises a more informative error
     def launch_mask_creator():
