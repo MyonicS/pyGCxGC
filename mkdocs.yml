@@ -4,29 +4,24 @@ site_description: >-
   pyGCxGC Python package for GCxGC data analysis
 nav:
   - Home: index.md
-  - Overview:
-      - example_docs/intro/why.md
-      - example_docs/intro/resources.md
-
   - Getting started:
       - setup/python_start.md
       - setup/install.md
       - notebooks/Develop_notebook.ipynb
-
-  - Code:
-      - example_docs/code/source.md
-      - example_docs/code/hints.md
-      - example_docs/code/tests.md
-  - Documentation:
-      - example_docs/mkdocs/docs.md
-      - example_docs/mkdocs/build.md
-  - GitHub and CI:
-      - example_docs/github/commits.md
-      - example_docs/github/workflows.md
+  - Resources:
+      - notebooks/Develop_notebook.ipynb
+      - examples.md
   - Code Documentation: reference/ # keep me!
-  - About:
+  - Development:
       - example_docs/about/changelog.md
+      - contributing.md
+      - roadmap.md
       - example_docs/about/license.md
+  - Credits:
+      - contributors.md
+      - citing.md
+      - citing_work.md
+
 
 repo_url: https://github.com/MyonicS/pyGCxGC/
 edit_uri: blob/main/docs/
