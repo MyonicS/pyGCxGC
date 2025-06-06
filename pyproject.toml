@@ -7,7 +7,7 @@ name = "pyGCxGC"
 description="A Python package description goes here."
 version = "0.0.1"
 readme = "README.md"
-license = { text = "BSD-3" }
+license = { text = "MIT" }
 authors = [{ name = "Sebastian Rejman", email = "s.rejman@uu.nl" }]
 keywords = ["GC", "GCxGC", "Science", "Chemistry"]
 classifiers = [

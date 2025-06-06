@@ -1,5 +1,5 @@
 site_name: pyGCxGC
-site_author: YourName
+site_author: Sebastian Rejman
 site_description: >-
   pyGCxGC Python package for GCxGC data analysis
 nav:
@@ -55,6 +55,8 @@ theme:
   palette:
     primary: orange
     scheme: slate
+  logo: assets/pyGCxGC_logo-simple.svg
+
 
 markdown_extensions:
   - abbr
@@ -115,3 +117,7 @@ plugins:
   - mkdocs-jupyter:
       ignore:
         - "docs/gen_ref_pages.py"
+
+
+extra_css:
+  - stylesheets/extra.css
