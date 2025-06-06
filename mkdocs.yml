@@ -7,12 +7,10 @@ nav:
   - Overview:
       - example_docs/intro/why.md
       - example_docs/intro/resources.md
-  - Setup:
-      - example_docs/setup/prep.md
-      - example_docs/setup/name.md
-      - example_docs/setup/basics.md
+
   - Getting started:
-      - example_docs/install.md
+      - setup/python_start.md
+      - setup/install.md
       - notebooks/Develop_notebook.ipynb
 
   - Code:
