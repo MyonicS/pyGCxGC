@@ -1,5 +1,7 @@
 # pyGCxGC
 
-Welcome to the documentation for the `pyGCxGC` code! Here you will find everything you need to get started with GCxGC data analysis.
+<p align="center">
+  <img src="assets/pyGCxGC_logo-01.svg" alt="pyGCxGC Logo" width="200"/>
+</p>
 
-**Check out the corresponding ⭐[YouTube tutorial](https://www.youtube.com/watch?v=th2CqJ6oBuM)⭐ for a video overview!**
+--8<-- "README.md:7:"

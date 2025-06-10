@@ -4,8 +4,6 @@
   <img src="docs/assets/pyGCxGC_logo-01.svg" alt="pyGCxGC Logo" width="200"/>
 </p>
 
-![Coverage](docs/assets/coverage-badge.svg)
-
 ## Overview
 pyGCxGC is a python package for processing of two dimensional Gas Chromatography (GCxGC) data.
 Presently, it supports generating 2D chromatograms for detectors with one parameter, such as FID.
@@ -18,6 +16,7 @@ Presently, it supports generating 2D chromatograms for detectors with one parame
 - Load 1D Chromatograms from a csv or a pandas dataframe
 - Generate 2D Chromatograms
 - Integrate areas in 2D Chromatograms using .tif masks
+- GUI for generation of masks
 
 > **⚠️ WARNING**: pyGCxGC is under active development. Braking changes can occur. Please report any issues using the [Issue Tracker](https://github.com/MyonicS/pyGCxGC/issues).
 
@@ -36,6 +35,8 @@ in editable mode:
 ```bash
 pip install -e .
 ```
+
+> **Note**: The GUI functionality requires tkinter, which is included in most Python installations. If you're having issues with the GUI, ensure tkinter is installed on your system.
 
 ## Documentation
 
@@ -78,3 +79,33 @@ result = gcgc.integrate_masks(
 )
 print(result)
 ```
+
+### Creating Masks with the GUI
+
+The package includes a graphical user interface for creating masks for 2D chromatograms. 
+The GUI allows you to load a chromatogram, draw regions of interest, and save them as binary mask files (`.tif`).
+
+To launch the GUI from within Python:
+
+```python
+import pyGCxGC as gcgc
+
+# Launch the mask creator GUI
+gcgc.launch_mask_creator()
+```
+
+You can also launch it directly from the command line:
+
+```bash
+pygcxgc-maskcreator
+```
+
+The GUI provides tools to:
+- Load and visualize 2D chromatograms
+- Draw masks using selection tools
+- Add/remove selections to/from masks
+- Save masks as .tif files for later use with pyGCxGC's masking functions
+
+For a detailed tutorial on using the Mask Creator GUI, see the `Mask_Creator_GUI.ipynb` notebook in the docs.
+
+For a finer control of the masks, you can use image processing software such as ImageJ.

@@ -1,34 +1,27 @@
 site_name: pyGCxGC
-site_author: YourName
+site_author: Sebastian Rejman
 site_description: >-
   pyGCxGC Python package for GCxGC data analysis
 nav:
   - Home: index.md
-  - Overview:
-      - example_docs/intro/why.md
-      - example_docs/intro/resources.md
-  - Setup:
-      - example_docs/setup/prep.md
-      - example_docs/setup/name.md
-      - example_docs/setup/basics.md
-  - Installation:
-      - example_docs/installation/pyproject.md
-      - example_docs/installation/install.md
-  - Code:
-      - example_docs/code/source.md
-      - example_docs/code/hints.md
-      - example_docs/code/tests.md
-  - Documentation:
-      - example_docs/mkdocs/docs.md
-      - example_docs/mkdocs/build.md
-  - GitHub and CI:
-      - example_docs/github/commits.md
-      - example_docs/github/workflows.md
+  - Getting started:
+      - setup/python_start.md
+      - setup/install.md
+      - notebooks/Develop_notebook.ipynb
+  - Resources:
+      - notebooks/Develop_notebook.ipynb
+      - examples.md
   - Code Documentation: reference/ # keep me!
-  - About:
+  - Development:
       - example_docs/about/changelog.md
-      - example_docs/about/conduct.md
+      - contributing.md
+      - roadmap.md
       - example_docs/about/license.md
+  - Credits:
+      - contributors.md
+      - citing.md
+      - citing_work.md
+
 
 repo_url: https://github.com/MyonicS/pyGCxGC/
 edit_uri: blob/main/docs/
@@ -55,6 +48,8 @@ theme:
   palette:
     primary: orange
     scheme: slate
+  logo: assets/pyGCxGC_logo-simple.svg
+
 
 markdown_extensions:
   - abbr
@@ -79,7 +74,12 @@ markdown_extensions:
   - pymdownx.keys
   - pymdownx.magiclink
   - pymdownx.mark
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: 
+        - '.'
+      url_download: true
+      url_max_size: 0
+      url_timeout: 10.0
   - pymdownx.smartsymbols
   - pymdownx.superfences:
       custom_fences:
@@ -95,6 +95,22 @@ markdown_extensions:
 plugins:
   - search:
       separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
   - autorefs
   - offline
-  - mkdocstrings:
+  - mkdocs-jupyter:
+      ignore:
+        - "docs/gen_ref_pages.py"
+
+
+extra_css:
+  - stylesheets/extra.css

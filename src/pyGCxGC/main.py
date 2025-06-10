@@ -9,20 +9,48 @@ from typing import Union, Callable, Optional, List, Dict, Any, Tuple
 from pyGCxGC.processing import integrate_2D
 
 
-
-#define a GCxGC FID class with attributes: upon initilization only the name is requiered
-"""
-- name :Sample name
-- Date
-- sampling rate
-- modulation time
-- shift
-- solvent cutoff
-- 1D
-- 2D
-"""
-
 class GCxGC_FID:
+    """
+    A class representing a GCxGC-FID (Gas Chromatography x Gas Chromatography - Flame Ionization Detector) dataset.
+
+    This class handles the processing and analysis of data from comprehensive two-dimensional gas chromatography experiments.
+
+    Parameters
+    ----------
+    chrom_1D : pd.DataFrame
+        DataFrame containing the one-dimensional chromatogram data with retention times.
+    chrom_2D : pd.DataFrame
+        DataFrame containing the two-dimensional chromatogram data.
+    sampling_interval : float
+        The time interval between consecutive data points in seconds.
+    modulation_time : float
+        The modulation period used in the GCxGC system in seconds.
+    shift : float, optional
+        A time shift correction to apply to the data, by default None.
+    solvent_cutoff : float, optional
+        Retention time threshold to exclude solvent peak from analysis, by default None.
+
+    Attributes
+    ----------
+    chrom_1D : pd.DataFrame
+        One-dimensional chromatogram data.
+    chrom_2D : pd.DataFrame
+        Two-dimensional chromatogram data.
+    sampling_interval : float
+        The time interval between consecutive data points.
+    modulation_time : float
+        The modulation period of the GCxGC system.
+    shift : float or None
+        The time shift correction applied to the data.
+    solvent_cutoff : float or None
+        The retention time threshold used to exclude solvent peaks.
+    name : str or None
+        Name identifier for the dataset.
+    date : str or None
+        Date of the chromatographic analysis.
+    limits : list
+        Boundaries of the chromatogram data [min_1D_time(min), max_1D_time(min), min_2D_time, max_2D_time].
+    """
 
     def __init__(self, chrom_1D: pd.DataFrame, chrom_2D: pd.DataFrame, sampling_interval, modulation_time, shift=None, solvent_cutoff=None):
         self.chrom_1D = chrom_1D

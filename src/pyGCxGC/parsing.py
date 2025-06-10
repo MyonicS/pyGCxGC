@@ -7,6 +7,21 @@ from typing import Union, Callable, Optional
 
 
 def parse_csv(path)->pd.DataFrame: #from a CSV file
+    """
+    Reads a OpenChrom csv file and returns a pandas dataframe
+
+    Parameters
+    ----------
+    path : str or os.PathLike
+        The path to the CSV file.
+        
+    Returns
+    -------
+    pd.DataFrame
+        A pandas DataFrame containing the parsed chromatogram data with columns:
+        - 'Ret.Time[s]': Retention time in seconds.
+        - 'Absolute Intensity': Absolute intensity values.
+    """
     df = pd.read_csv(path, sep = ',',  skiprows = 1)
     df.columns = ['Time(ms)', 'Time(min)', 'unknown','Absolute Intensity']
     df['Ret.Time'] = df['Time(min)']
