@@ -31,9 +31,9 @@ jobs:
     - name: Generate coverage badge
       run: |
         pip install coverage-badge
-        coverage-badge -o coverage-badge.svg -f
+        coverage-badge -o docs/assets/coverage-badge.svg -f
     - name: Upload coverage badge
       uses: actions/upload-artifact@v4
       with:
         name: coverage-badge
-        path: coverage-badge.svg
+        path: docs/assets/coverage-badge.svg
