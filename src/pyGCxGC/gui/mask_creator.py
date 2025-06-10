@@ -16,9 +16,35 @@ from matplotlib.widgets import RectangleSelector, LassoSelector, PolygonSelector
 from matplotlib.path import Path
 import tifffile
 import traceback
+import platform
 
 from typing import Union, Optional, List, Tuple, Any
 import pyGCxGC as gcgc
+
+
+def _configure_system_font():
+    """
+    Configure appropriate font based on operating system for matplotlib.
+    
+    Returns
+    -------
+    str
+        Font family name for the current system
+    """
+    system = platform.system()
+    if system == 'Windows':
+        font_family = 'Arial'
+    elif system == 'Linux':
+        font_family = 'Liberation Sans'
+    elif system == 'Darwin':  # macOS
+        font_family = 'Helvetica'
+    else:
+        font_family = 'sans-serif'
+    
+    # Set matplotlib font
+    plt.rcParams['font.family'] = font_family
+    
+    return font_family
 
 
 class ToolTip:
@@ -102,8 +128,8 @@ class MaskCreatorGUI:
         root : tk.Tk
             The root Tkinter window
         """
-        # Set matplotlib font to Liberation Sans
-        plt.rcParams['font.family'] = 'Liberation Sans'
+        # Configure system-appropriate font for matplotlib
+        self.font_family = _configure_system_font()
         
         self.root = root
         self.root.title("pyGCxGC Mask Creator")
@@ -374,9 +400,9 @@ class MaskCreatorGUI:
         # Create Figure and Axes with constrained layout to handle colorbar properly
         self.fig = Figure(figsize=(8, 6), dpi=100, constrained_layout=True)
         
-        # Set Liberation Sans font for all text in the figure
+        # Set system-appropriate font for all text in the figure
         from matplotlib import rcParams
-        rcParams['font.family'] = 'Liberation Sans'
+        rcParams['font.family'] = self.font_family
         
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel('Retention time 1 (min)')
