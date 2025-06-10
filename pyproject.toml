@@ -39,6 +39,9 @@ docs = [
     "mkdocstrings[python]>=0.22.0",
     "mkdocs-gen-files>=0.5.0",
     "mkdocs-literate-nav>=0.6.0",
+    "mkdocs-jupyter>=0.24.0",
+    "mkdocs-autorefs>=0.5.0",
+    "mkdocs-material[offline]>=9.4.0",
     "pillow>=10.0.0",
     "cairosvg>=2.7.1"
 ]
