@@ -1,11 +1,10 @@
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import glob
 import scipy.integrate as integrate
-from typing import Union, Callable, Optional, List, Dict, Any, Tuple
+from typing import Callable, Optional, List, Dict, Any, Tuple
 from pyGCxGC.processing import integrate_2D
 
 
@@ -52,7 +51,15 @@ class GCxGC_FID:
         Boundaries of the chromatogram data [min_1D_time(min), max_1D_time(min), min_2D_time, max_2D_time].
     """
 
-    def __init__(self, chrom_1D: pd.DataFrame, chrom_2D: pd.DataFrame, sampling_interval, modulation_time, shift=None, solvent_cutoff=None):
+    def __init__(
+        self,
+        chrom_1D: pd.DataFrame,
+        chrom_2D: pd.DataFrame,
+        sampling_interval,
+        modulation_time,
+        shift=None,
+        solvent_cutoff=None,
+    ):
         self.chrom_1D = chrom_1D
         self.chrom_2D = chrom_2D
         self.sampling_interval = sampling_interval
@@ -62,25 +69,23 @@ class GCxGC_FID:
         self.name = None
         self.date = None
         self.limits = [
-            self.chrom_1D['Ret.Time[s]'].min()/60,
-            self.chrom_1D['Ret.Time[s]'].max()/60,
+            self.chrom_1D["Ret.Time[s]"].min() / 60,
+            self.chrom_1D["Ret.Time[s]"].max() / 60,
             self.chrom_2D.index.min(),
-            self.chrom_2D.index.max()
+            self.chrom_2D.index.max(),
         ]
 
 
-
-
-def split_solvent(df: pd.DataFrame, solvent_time: Union[int, float] = 0) -> pd.DataFrame:
+def split_solvent(df: pd.DataFrame, solvent_time: int | float = 0) -> pd.DataFrame:
     """
     Sets the intensity to 0 for rows in the DataFrame where the retention time is less than or equal to the specified solvent time.
 
     Parameters
     ----------
     df : pd.DataFrame
-        The input DataFrame containing chromatographic data. 
+        The input DataFrame containing chromatographic data.
         It must have columns 'Ret.Time[s]' and 'Absolute Intensity'.
-    solvent_time : Union[int, float], optional
+    solvent_time : int | float, optional
         The retention time threshold in minutes below which the intensity will be set to 0.
 
     Returns
@@ -88,17 +93,20 @@ def split_solvent(df: pd.DataFrame, solvent_time: Union[int, float] = 0) -> pd.D
     pd.DataFrame
         The modified DataFrame with updated intensity values.
     """
-    df.loc[df['Ret.Time[s]'] <= solvent_time * 60, 'Absolute Intensity'] = 0
+    df.loc[df["Ret.Time[s]"] <= solvent_time * 60, "Absolute Intensity"] = 0
     return df
 
-def add_split(df,modulation_time,sampling_interval):#split time in s, sampling interval in ms
+
+def add_split(
+    df, modulation_time, sampling_interval
+):  # split time in s, sampling interval in ms
     """
     Splits a DataFrame into segments based on the specified split time and sampling interval.
-    
+
     Parameters:
     -----------
     df : pandas.DataFrame
-        The input DataFrame containing chromatographic data. It is expected to have 
+        The input DataFrame containing chromatographic data. It is expected to have
         an index that represents the time points of the data.
     modulation_time : float
         The time duration (in s) for each split segment.
@@ -107,20 +115,22 @@ def add_split(df,modulation_time,sampling_interval):#split time in s, sampling i
     Returns:
     --------
     pandas.DataFrame
-        The modified DataFrame with an additional column 'split_no_fromindex' that 
+        The modified DataFrame with an additional column 'split_no_fromindex' that
         indicates the split segment number for each row.
-        """
-    rows_splitting = modulation_time/sampling_interval*1000
-    df['split_no_fromindex'] = df.index//rows_splitting 
-    while len(df[df['split_no_fromindex']==df['split_no_fromindex'].max()]) < len(df[df['split_no_fromindex']==df['split_no_fromindex'].min()]):
-        df.loc[len(df)+1] = df.iloc[-1]
+    """
+    rows_splitting = modulation_time / sampling_interval * 1000
+    df["split_no_fromindex"] = df.index // rows_splitting
+    while len(df[df["split_no_fromindex"] == df["split_no_fromindex"].max()]) < len(
+        df[df["split_no_fromindex"] == df["split_no_fromindex"].min()]
+    ):
+        df.loc[len(df) + 1] = df.iloc[-1]
     return df
 
 
-
-def min_correct(df): # 'global minimum' as baseline
-    df['Absolute Intensity'] = df['Absolute Intensity'] - df['Absolute Intensity'].min()
+def min_correct(df):  # 'global minimum' as baseline
+    df["Absolute Intensity"] = df["Absolute Intensity"] - df["Absolute Intensity"].min()
     return df
+
 
 def baseline_stridewise(df_array):
     """
@@ -129,43 +139,48 @@ def baseline_stridewise(df_array):
     df_array = df_array - df_array.min(axis=0)
     return df_array
 
-def convert_to2D(df:pd.DataFrame, modulation_time:float)->pd.DataFrame:
+
+def convert_to2D(df: pd.DataFrame, modulation_time: float) -> pd.DataFrame:
     """
     Generates a 2D Chromatogram from a 1D chromatogram DataFrame.
     Arguments:
     df : pandas.DataFrame
-        The input DataFrame containing chromatographic data. It is expected to have 
+        The input DataFrame containing chromatographic data. It is expected to have
         columns 'split_no_fromindex' and 'Absolute Intensity'.
     modulation_time : float
         The time duration (in s) for each split segment.
     Returns:
     --------
     pandas.DataFrame
-        A 2D DataFrame where the index represents the retention time and the columns 
+        A 2D DataFrame where the index represents the retention time and the columns
         represent the split time. The values in the DataFrame are the absolute intensities.
     """
 
-    df_short = df[['split_no_fromindex','Absolute Intensity']]
+    df_short = df[["split_no_fromindex", "Absolute Intensity"]]
     array_list = []
-    
-    for i in range(0,int(df_short['split_no_fromindex'].max())):
-        array_list.append(df_short[df_short['split_no_fromindex']==i]['Absolute Intensity'].values)
 
-    #turn arraylist into an 2D array
-    array = np.zeros((len(array_list),len(array_list[0])))
-    for i in range(0,len(array_list)):
-        array[i,:] = array_list[i]
+    for i in range(0, int(df_short["split_no_fromindex"].max())):
+        array_list.append(
+            df_short[df_short["split_no_fromindex"] == i]["Absolute Intensity"].values
+        )
+
+    # turn arraylist into an 2D array
+    array = np.zeros((len(array_list), len(array_list[0])))
+    for i in range(0, len(array_list)):
+        array[i, :] = array_list[i]
 
     index_list_retention_time = []
     for i in range(len(array_list)):
-        index_list_retention_time.append(i*modulation_time)
+        index_list_retention_time.append(i * modulation_time)
 
     columns_splittime = []
     for i in range(len(array_list[0])):
-        columns_splittime.append(round(i*modulation_time/len(array_list[0]),3))
+        columns_splittime.append(round(i * modulation_time / len(array_list[0]), 3))
 
-    df_array = pd.DataFrame(array, index = index_list_retention_time, columns = columns_splittime)
-    df_array= df_array.T
+    df_array = pd.DataFrame(
+        array, index=index_list_retention_time, columns=columns_splittime
+    )
+    df_array = df_array.T
     df_array = df_array.iloc[::-1]
     return df_array
 
@@ -188,6 +203,7 @@ def shift_phase(df_array, shift):
     df_array_shifted = np.roll(df_array, shift, axis=0)
     return pd.DataFrame(df_array_shifted, index=indices, columns=columns)
 
+
 import tifffile
 
 
@@ -202,40 +218,42 @@ def normalize_by_volume(df_array):
     pandas.DataFrame
         The normalized 2D DataFrame.
     """
-    df_array_norm = df_array/integrate_2D(df_array)
+    df_array_norm = df_array / integrate_2D(df_array)
     return df_array_norm
-    
+
+
 def integrate_masked(df_norm_array, maskpath):
-    mask =  tifffile.imread(maskpath)/255 # if the mask is binary no need to divide by 255
-    df_norm_array_masked  = df_norm_array*mask
+    mask = (
+        tifffile.imread(maskpath) / 255
+    )  # if the mask is binary no need to divide by 255
+    df_norm_array_masked = df_norm_array * mask
 
     array_norm_mask_diarom = np.array(df_norm_array_masked)
-    #integrate over rows
+    # integrate over rows
     row_integrated = integrate.trapezoid(array_norm_mask_diarom, axis=0)
-    #integrating the new array
+    # integrating the new array
     column_integrated = integrate.trapezoid(row_integrated, axis=0)
     return column_integrated
-    
 
 
 def mask_integrate(df_array_norm, mask_dir):
-    mask_list = glob.glob(mask_dir + '*.tif')
-    #get the mask names
+    mask_list = glob.glob(mask_dir + "*.tif")
+    # get the mask names
     mask_names = []
     for i in range(len(mask_list)):
-        mask_name = mask_list[i].split('\\')[-1].split('.')[0]
-        #split off the 'Mask_' part
-        mask_names.append(mask_name.split('Mask_')[-1])
-
+        mask_name = mask_list[i].split("\\")[-1].split(".")[0]
+        # split off the 'Mask_' part
+        mask_names.append(mask_name.split("Mask_")[-1])
 
     integral_list = []
     for i in range(len(mask_list)):
         integral_list.append(integrate_masked(df_array_norm, mask_list[i]))
 
     # make a dataframe with the integral values and the mask_names as column names
-    df_integral = pd.DataFrame([integral_list], columns = mask_names)
-    df_integral['unassigned'] = 1-df_integral[mask_names].sum(axis=1)
+    df_integral = pd.DataFrame([integral_list], columns=mask_names)
+    df_integral["unassigned"] = 1 - df_integral[mask_names].sum(axis=1)
     return df_integral
+
 
 # def process_chromatogram(filepath, modulation_time, sampling_interval, mask_dir,shift=0, solvent_time=0):
 #     df = parse_chromatogram(filepath)
@@ -247,10 +265,6 @@ def mask_integrate(df_array_norm, mask_dir):
 #     df_array_norm = normalize_array(df_array)
 #     df_integral = mask_integrate(df_array_norm, mask_dir)
 #     return df_integral, df_array_norm
-
-
-
-
 
 
 # from scipy import sparse
