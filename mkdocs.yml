@@ -7,9 +7,9 @@ nav:
   - Getting started:
       - setup/python_start.md
       - setup/install.md
-      - notebooks/Develop_notebook.ipynb
+      - notebooks/Quickstart_notebook.ipynb
   - Resources:
-      - notebooks/Develop_notebook.ipynb
+      - notebooks/Quickstart_notebook.ipynb
       - examples.md
   - Code Documentation: reference/ # keep me!
   - Development:
@@ -21,7 +21,6 @@ nav:
       - contributors.md
       - citing.md
       - citing_work.md
-
 
 repo_url: https://github.com/MyonicS/pyGCxGC/
 edit_uri: blob/main/docs/
@@ -50,7 +49,6 @@ theme:
     scheme: slate
   logo: assets/pyGCxGC_logo-simple.svg
 
-
 markdown_extensions:
   - abbr
   - admonition
@@ -75,8 +73,8 @@ markdown_extensions:
   - pymdownx.magiclink
   - pymdownx.mark
   - pymdownx.snippets:
-      base_path: 
-        - '.'
+      base_path:
+        - "."
       url_download: true
       url_max_size: 0
       url_timeout: 10.0
@@ -110,7 +108,6 @@ plugins:
   - mkdocs-jupyter:
       ignore:
         - "docs/gen_ref_pages.py"
-
 
 extra_css:
   - stylesheets/extra.css

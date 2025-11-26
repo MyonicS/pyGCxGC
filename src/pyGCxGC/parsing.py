@@ -88,6 +88,14 @@ def parse_2D_chromatogram(
     - Padding to account for non-integer multiples of modulation time and sampling interval is not implemented.
     """
     if isinstance(data, pd.DataFrame):
+        # Checking if "Absolute Intensity" and "Ret.time[s]" are in the dataframe
+        if (
+            "Absolute Intensity" not in data.columns
+            or "Ret.Time[s]" not in data.columns
+        ):
+            raise ValueError(
+                'DataFrame must contain "Absolute Intensity" and "Ret.Time[s]" columns'
+            )
         chrom = data
         if name is None:
             name = "Chromatogram"
@@ -142,8 +150,12 @@ def parse_2D_chromatogram(
 
     elif callable(baseline_type):  # type: ignore
         chrom_2D = baseline_type(chrom_2D)
-    else:
+    elif baseline_type is None:
         pass
+    else:
+        raise ValueError(
+            f"baseline_type must be 'stridewise', 'global', a callable, or None, not {type(baseline_type)}"
+        )
 
     # Normalization
     if normalize == "volume":
