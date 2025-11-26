@@ -10,7 +10,6 @@ Presently, it supports generating 2D chromatograms for detectors with one parame
 
 [![Tests](https://github.com/MyonicS/pyGCxGC/actions/workflows/tests.yaml/badge.svg)](https://github.com/MyonicS/pyGCxGC/actions/workflows/tests.yaml)
 [![Test Status](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml/badge.svg?branch=main)](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml)
-![Coverage](docs/assets/coverage-badge.svg)
 
 ## Features
 - Load 1D Chromatograms from a csv or a pandas dataframe
