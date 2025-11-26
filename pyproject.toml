@@ -23,7 +23,7 @@ classifiers = [
     "Operating System :: Unix",
     "Operating System :: MacOS",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "pandas",
@@ -135,6 +135,7 @@ lint.select = [
 ]
 lint.ignore = [
   "E501",   # Line too long
+  "I002",   # Missing required import
   "ISC001",   # single-line-implicit-string-concatenation
   "PLR",    # Design related pylint codes
   "PERF203",  # try-except-in-loop
