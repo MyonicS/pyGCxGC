@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="uuid-79889a4f-3097-4782-b9cb-ca1d90d86e66" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 249.6 247.8">
+  <!-- Generator: Adobe Illustrator 29.1.0, SVG Export Plug-In . SVG Version: 2.1.0 Build 142)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #4555a0;
+      }
+
+      .st1 {
+        fill: none;
+        stroke: #fff;
+        stroke-miterlimit: 10;
+        stroke-width: 8px;
+      }
+
+      .st2 {
+        fill: #e25a48;
+      }
+
+      .st3 {
+        fill: #0f1122;
+      }
+
+      .st4 {
+        fill: #fff;
+      }
+
+      .st5 {
+        fill: #fcbe35;
+      }
+
+      .st6 {
+        fill: #10948b;
+      }
+
+      .st7 {
+        fill: #367ebd;
+      }
+
+      .st8 {
+        fill: #f7933d;
+      }
+    </style>
+  </defs>
+  <g id="uuid-d1da9af3-9382-4fca-9170-3bade7291d64">
+    <rect id="uuid-774e0092-a645-4f56-b508-947aba850203" class="st3" x=".9" y="0" width="247.8" height="247.8" rx="15.7" ry="15.7"/>
+  </g>
+  <g>
+    <polyline class="st1" points="16.6 29.6 16.6 228.9 232.7 228.9"/>
+    <polygon class="st4" points="3.7 29.6 16.6 7.2 29.6 29.6 3.7 29.6"/>
+    <polygon class="st4" points="224.2 241.8 246.5 228.9 224.2 216 224.2 241.8"/>
+  </g>
+  <circle class="st6" cx="54.4" cy="137.9" r="21.1"/>
+  <circle class="st2" cx="100" cy="177.7" r="10.2"/>
+  <circle class="st7" cx="158" cy="151.1" r="13.3"/>
+  <circle class="st5" cx="115.2" cy="99.2" r="13.3"/>
+  <circle class="st8" cx="176" cy="57.6" r="15.2"/>
+  <circle class="st0" cx="224.7" cy="108.6" r="10.7"/>
+</svg>
