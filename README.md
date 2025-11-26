@@ -18,6 +18,10 @@ Presently, it supports generating 2D chromatograms for detectors with one parame
 - Integrate areas in 2D Chromatograms using .tif masks
 - GUI for generation of masks
 
+<p align="center">
+  <img src="docs/assets/Example_chromatogram.png" alt="Example 2D Chromatogram" width="400"/>
+</p>
+
 > **⚠️ WARNING**: pyGCxGC is under active development. Braking changes can occur. Please report any issues using the [Issue Tracker](https://github.com/MyonicS/pyGCxGC/issues).
 
 ## Installation
@@ -40,44 +44,54 @@ pip install -e .
 
 ## Documentation
 
-Check the Development Notebook to get started, more in-depth docs to be developed.
+For a short tutorial, see the [Quickstart Notebook](docs/notebooks/Quickstart_notebook.ipynb).
 
-## Usage
+## Quick Start
 
-### Parsing and plotting
+### Parsing and Plotting
 
-To generate a 2D chromatogram object, you need either a csv or padnas dataframe with the retention time in seconds ('Ret.Time[s]') and a column labeled 'Absolute Intensity'.
+Parse a 2D chromatogram from a CSV file or from a Dataframe with retention time (`Ret.Time[s]`) and `Absolute Intensity` columns:
 
 ```python
 import pyGCxGC as gcgc
+import numpy as np
 from matplotlib import pyplot as plt
 
+# Parse chromatogram
 chrom = gcgc.parse_2D_chromatogram(
     'example_data/example_chromatograms/Example_FID.csv',
-    modulation_time=20,
-    sampling_interval='infer'
+    modulation_time=20,  # seconds
+    sampling_interval='infer',
+    baseline_type='stridewise',
+    normalize='volume',
+    name='Example FID'
 )
 
-# Plot the 2D chromatogram
-import matplotlib.pyplot as plt
-plt.imshow(chrom.chrom_2D, cmap='viridis', extent=chrom.limits, aspect='auto')
+# Plot
+plt.imshow(np.sqrt(chrom.chrom_2D), 
+           cmap='viridis', 
+           extent=chrom.limits, 
+           aspect='auto')
 plt.xlabel('Retention time 1 (min)')
 plt.ylabel('Retention time 2 (s)')
-plt.colorbar(label='intensity')
+plt.colorbar(label=r'$\sqrt{\mathrm{intensity}}$')
 plt.show()
 ```
 
-### Integrating a specific area
-To integrate a specific area, provide a binary mask as .tif file.
-You can also provide a directory with multiple masks.
+### Masking and Integration
+
+Integrate specific regions using binary mask files:
 
 ```python
-# Integrate using a mask file
-result = gcgc.integrate_masks(
-    chrom.chrom_2D,
-    masks='example_data/example_masks/Mask_1.tif'
+# Single mask
+masked = gcgc.mask_chromatogram(chrom.chrom_2D, 'path/to/mask.tif')
+
+# Multiple masks
+results = gcgc.integrate_masks(
+    chrom.chrom_2D, 
+    masks='path/to/masks/',  # directory or list of paths
+    mask_names='infer'
 )
-print(result)
 ```
 
 ### Creating Masks with the GUI
@@ -94,18 +108,10 @@ import pyGCxGC as gcgc
 gcgc.launch_mask_creator()
 ```
 
-You can also launch it directly from the command line:
-
-```bash
-pygcxgc-maskcreator
-```
-
 The GUI provides tools to:
 - Load and visualize 2D chromatograms
 - Draw masks using selection tools
 - Add/remove selections to/from masks
 - Save masks as .tif files for later use with pyGCxGC's masking functions
 
-For a detailed tutorial on using the Mask Creator GUI, see the `Mask_Creator_GUI.ipynb` notebook in the docs.
-
-For a finer control of the masks, you can use image processing software such as ImageJ.
+For a finer control, save the chromatogram as tif and create a mask image processing software such as ImageJ.
