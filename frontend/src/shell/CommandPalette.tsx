@@ -1,0 +1,155 @@
+/** Command palette, Ctrl/Cmd+K (spec SHELL-6), listing the keyboard shortcuts (SHELL-7). */
+
+import { create } from 'zustand'
+
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from '@/components/ui/command'
+import { COLORMAPS } from '@/lib/colormaps'
+import { SCALING_LABELS, SCALINGS } from '@/lib/scaling'
+import { basename } from '@/lib/utils'
+import { closeDocument, setActiveDocument, setLibraryActive, useSession } from '@/store/session'
+import {
+  INTERPOLATION_LABELS,
+  INTERPOLATIONS,
+  resetZoom,
+  setTool,
+  updateDisplay,
+} from '@/store/view'
+
+import { openPath, showOpenDialog } from './openFile'
+import { openSettings } from './SettingsDialog'
+import { setTheme } from './theme'
+import { mod } from './TopBar'
+import { resetLayout } from './Workspace'
+
+const usePalette = create<{ open: boolean }>(() => ({ open: false }))
+
+export function openCommandPalette() {
+  usePalette.setState({ open: true })
+}
+
+const NO_FILES: string[] = []
+
+export function CommandPalette() {
+  const open = usePalette((s) => s.open)
+  const documents = useSession((s) => s.documents)
+  const order = useSession((s) => s.order)
+  const activeId = useSession((s) => s.activeId)
+  const libraries = useSession((s) => s.libraries)
+  const recent = useSession((s) => s.settings.recent_files ?? NO_FILES)
+
+  const run = (fn: () => void) => () => {
+    usePalette.setState({ open: false })
+    fn()
+  }
+  const display = (changes: Parameters<typeof updateDisplay>[1]) =>
+    run(() => activeId && updateDisplay(activeId, changes))
+
+  return (
+    <CommandDialog
+      open={open}
+      onOpenChange={(o) => usePalette.setState({ open: o })}
+      title="Command palette"
+      description="Search for a command"
+    >
+      <Command>
+        <CommandInput placeholder="Type a command…" />
+        <CommandList>
+          <CommandEmpty>No matching command.</CommandEmpty>
+          <CommandGroup heading="File">
+            <CommandItem onSelect={run(() => showOpenDialog())}>
+              Open file…<CommandShortcut>{mod}O</CommandShortcut>
+            </CommandItem>
+            {recent.map((path) => (
+              <CommandItem
+                key={path}
+                value={`open recent ${path}`}
+                onSelect={run(() => void openPath(path))}
+              >
+                Open recent: {basename(path)}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          {order.length > 0 && (
+            <CommandGroup heading="Documents">
+              {order.map((id) => (
+                <CommandItem
+                  key={id}
+                  value={`switch to ${documents[id]?.name} ${id}`}
+                  onSelect={run(() => setActiveDocument(id))}
+                >
+                  Switch to {documents[id]?.name}
+                </CommandItem>
+              ))}
+              {activeId && (
+                <CommandItem onSelect={run(() => void closeDocument(activeId))}>
+                  Close {documents[activeId]?.name}
+                </CommandItem>
+              )}
+            </CommandGroup>
+          )}
+          {activeId && (
+            <CommandGroup heading="View">
+              <CommandItem onSelect={run(() => setTool('select'))}>
+                Tool: select / inspect<CommandShortcut>V</CommandShortcut>
+              </CommandItem>
+              <CommandItem onSelect={run(() => setTool('pan'))}>
+                Tool: pan<CommandShortcut>H</CommandShortcut>
+              </CommandItem>
+              <CommandItem onSelect={run(() => setTool('zoom'))}>
+                Tool: zoom box<CommandShortcut>Z</CommandShortcut>
+              </CommandItem>
+              <CommandItem onSelect={run(() => resetZoom(activeId))}>
+                Reset zoom<CommandShortcut>0</CommandShortcut>
+              </CommandItem>
+              {COLORMAPS.map((c) => (
+                <CommandItem key={c} onSelect={display({ colormap: c })}>
+                  Colour map: {c}
+                </CommandItem>
+              ))}
+              {SCALINGS.map((s) => (
+                <CommandItem key={s} onSelect={display({ scaling: s })}>
+                  Scaling: {SCALING_LABELS[s]}
+                </CommandItem>
+              ))}
+              {INTERPOLATIONS.map((i) => (
+                <CommandItem key={i} onSelect={display({ interpolation: i })}>
+                  Interpolation: {INTERPOLATION_LABELS[i]}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {Object.values(libraries).length > 0 && (
+            <CommandGroup heading="Library">
+              {Object.values(libraries).map((lib) => (
+                <CommandItem
+                  key={lib.id}
+                  value={`library ${lib.name} ${lib.id}`}
+                  disabled={lib.status !== 'ready'}
+                  onSelect={run(() => void setLibraryActive(lib.id, true))}
+                >
+                  Use library: {lib.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          <CommandGroup heading="App">
+            <CommandItem onSelect={run(() => setTheme('light'))}>Theme: light</CommandItem>
+            <CommandItem onSelect={run(() => setTheme('dark'))}>Theme: dark</CommandItem>
+            <CommandItem onSelect={run(() => setTheme('system'))}>Theme: system</CommandItem>
+            <CommandItem onSelect={run(() => resetLayout())}>Reset layout</CommandItem>
+            <CommandItem onSelect={run(() => openSettings())}>Settings…</CommandItem>
+          </CommandGroup>
+        </CommandList>
+      </Command>
+    </CommandDialog>
+  )
+}

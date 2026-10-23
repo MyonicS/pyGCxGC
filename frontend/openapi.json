@@ -1,0 +1,4925 @@
+{
+  "components": {
+    "schemas": {
+      "DetectPeaksRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "identify": {
+            "default": true,
+            "title": "Identify",
+            "type": "boolean"
+          },
+          "n_average": {
+            "default": 3,
+            "minimum": 1.0,
+            "title": "N Average",
+            "type": "integer"
+          },
+          "snr": {
+            "default": 10.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Snr",
+            "type": "number"
+          }
+        },
+        "title": "DetectPeaksRequest",
+        "type": "object"
+      },
+      "DocumentInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/GridInfo"
+          },
+          "has_peaks": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Peaks"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "fid",
+              "ms"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "mass_range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mass Range"
+          },
+          "mz": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mz"
+          },
+          "n_masks": {
+            "title": "N Masks",
+            "type": "integer"
+          },
+          "n_scans": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Scans"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "title": "Params",
+            "type": "object"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "shape": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Shape",
+            "type": "array"
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tic",
+                  "eic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "path",
+          "revision",
+          "params",
+          "shape",
+          "grid",
+          "summary",
+          "warnings",
+          "n_masks"
+        ],
+        "title": "DocumentInfo",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "traceback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traceback"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "type"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tiff",
+                  "json",
+                  "csv",
+                  "msp",
+                  "txt"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Write here (desktop); else download",
+            "title": "Path"
+          },
+          "what": {
+            "enum": [
+              "masks",
+              "mask_set",
+              "integration",
+              "peaks",
+              "spectrum"
+            ],
+            "title": "What",
+            "type": "string"
+          }
+        },
+        "required": [
+          "what"
+        ],
+        "title": "ExportRequest",
+        "type": "object"
+      },
+      "ExportResult": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ExportResult",
+        "type": "object"
+      },
+      "FileProbe": {
+        "additionalProperties": true,
+        "description": "What opening a file would do (``kind`` is ``None`` with an ``error``).",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fid",
+                  "ms"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "needs_modulation_time": {
+            "title": "Needs Modulation Time",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "size",
+          "kind",
+          "error",
+          "needs_modulation_time"
+        ],
+        "title": "FileProbe",
+        "type": "object"
+      },
+      "FsEntry": {
+        "additionalProperties": true,
+        "properties": {
+          "is_dir": {
+            "title": "Is Dir",
+            "type": "boolean"
+          },
+          "modified": {
+            "title": "Modified",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "is_dir",
+          "size",
+          "modified"
+        ],
+        "title": "FsEntry",
+        "type": "object"
+      },
+      "FsListing": {
+        "additionalProperties": true,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/FsEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "parent",
+          "entries"
+        ],
+        "title": "FsListing",
+        "type": "object"
+      },
+      "GridInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "modulation_time": {
+            "title": "Modulation Time",
+            "type": "number"
+          },
+          "n_mod": {
+            "title": "N Mod",
+            "type": "integer"
+          },
+          "n_rt2": {
+            "title": "N Rt2",
+            "type": "integer"
+          },
+          "rt1_start": {
+            "title": "Rt1 Start",
+            "type": "number"
+          },
+          "rt2_start": {
+            "title": "Rt2 Start",
+            "type": "number"
+          },
+          "sampling_interval": {
+            "title": "Sampling Interval",
+            "type": "number"
+          }
+        },
+        "required": [
+          "n_rt2",
+          "n_mod",
+          "rt1_start",
+          "rt2_start",
+          "modulation_time",
+          "sampling_interval"
+        ],
+        "title": "GridInfo",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HitInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "cas": {
+            "title": "Cas",
+            "type": "string"
+          },
+          "db_no": {
+            "title": "Db No",
+            "type": "integer"
+          },
+          "formula": {
+            "title": "Formula",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "library": {
+            "title": "Library",
+            "type": "string"
+          },
+          "library_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Id"
+          },
+          "match": {
+            "title": "Match",
+            "type": "number"
+          },
+          "mw": {
+            "title": "Mw",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "nist_no": {
+            "title": "Nist No",
+            "type": "integer"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "reverse_match": {
+            "title": "Reverse Match",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "index",
+          "name",
+          "match",
+          "reverse_match",
+          "formula",
+          "mw",
+          "cas",
+          "nist_no",
+          "db_no",
+          "library",
+          "library_id"
+        ],
+        "title": "HitInfo",
+        "type": "object"
+      },
+      "IntegrationResult": {
+        "additionalProperties": true,
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "masks": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationRow"
+            },
+            "title": "Masks",
+            "type": "array"
+          },
+          "mz": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Mz",
+            "type": "array"
+          },
+          "overlaps": {
+            "items": {
+              "$ref": "#/components/schemas/Overlap"
+            },
+            "title": "Overlaps",
+            "type": "array"
+          },
+          "signal": {
+            "title": "Signal",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "unassigned": {
+            "$ref": "#/components/schemas/IntegrationRow"
+          }
+        },
+        "required": [
+          "document_id",
+          "signal",
+          "mz",
+          "total",
+          "masks",
+          "unassigned",
+          "overlaps",
+          "error"
+        ],
+        "title": "IntegrationResult",
+        "type": "object"
+      },
+      "IntegrationRow": {
+        "additionalProperties": true,
+        "properties": {
+          "mask_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask Id"
+          },
+          "n_pixels": {
+            "title": "N Pixels",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "volume": {
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "mask_id",
+          "name",
+          "volume",
+          "percent",
+          "n_pixels"
+        ],
+        "title": "IntegrationRow",
+        "type": "object"
+      },
+      "JobInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "number"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "traceback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Traceback"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "document_id",
+          "status",
+          "progress",
+          "message",
+          "result",
+          "error",
+          "traceback",
+          "warnings"
+        ],
+        "title": "JobInfo",
+        "type": "object"
+      },
+      "JobStarted": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobInfo"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "JobStarted",
+        "type": "object"
+      },
+      "LibraryAdd": {
+        "additionalProperties": false,
+        "properties": {
+          "activate": {
+            "default": true,
+            "title": "Activate",
+            "type": "boolean"
+          },
+          "exclusive": {
+            "default": false,
+            "title": "Exclusive",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "NIST MAINLIB folder, .msp/.zip/.npz file or \"mona\"",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "LibraryAdd",
+        "type": "object"
+      },
+      "LibraryInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "cache_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache File"
+          },
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "licence": {
+            "title": "Licence",
+            "type": "string"
+          },
+          "n_spectra": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Spectra"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "nist",
+              "mona",
+              "msp",
+              "npz"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "loading",
+              "ready",
+              "failed",
+              "removed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "source",
+          "status",
+          "active",
+          "n_spectra",
+          "licence",
+          "cache_file",
+          "cached",
+          "error"
+        ],
+        "title": "LibraryInfo",
+        "type": "object"
+      },
+      "LibraryUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "exclusive": {
+            "default": false,
+            "title": "Exclusive",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "title": "LibraryUpdate",
+        "type": "object"
+      },
+      "LocalBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "gap": {
+            "default": 3,
+            "description": "Scans between the point and the background",
+            "minimum": 1.0,
+            "title": "Gap",
+            "type": "integer"
+          },
+          "image_model": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "modulation_percentile": "#/components/schemas/ModulationPercentileBaseline",
+                    "none": "#/components/schemas/NoneBaseline",
+                    "rolling_percentile": "#/components/schemas/RollingPercentileBaseline"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NoneBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ModulationPercentileBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RollingPercentileBaseline"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Model"
+          },
+          "mode": {
+            "const": "local",
+            "default": "local",
+            "title": "Mode",
+            "type": "string"
+          },
+          "width": {
+            "default": 5,
+            "description": "Background scans on each side",
+            "minimum": 1.0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "title": "LocalBaseline",
+        "type": "object"
+      },
+      "MaskCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "MaskCreate",
+        "type": "object"
+      },
+      "MaskImport": {
+        "additionalProperties": false,
+        "properties": {
+          "from_document": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Document"
+          },
+          "mask_set": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mask Set"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "replace": {
+            "default": false,
+            "title": "Replace",
+            "type": "boolean"
+          }
+        },
+        "title": "MaskImport",
+        "type": "object"
+      },
+      "MaskInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "n_pixels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Pixels"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/OperationInfo"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "color",
+          "visible",
+          "category",
+          "operations",
+          "n_pixels",
+          "volume",
+          "percent"
+        ],
+        "title": "MaskInfo",
+        "type": "object"
+      },
+      "MaskSetInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "can_redo": {
+            "title": "Can Redo",
+            "type": "boolean"
+          },
+          "can_undo": {
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "masks": {
+            "items": {
+              "$ref": "#/components/schemas/MaskInfo"
+            },
+            "title": "Masks",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "document_id",
+          "revision",
+          "can_undo",
+          "can_redo",
+          "masks",
+          "error"
+        ],
+        "title": "MaskSetInfo",
+        "type": "object"
+      },
+      "MaskUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible"
+          }
+        },
+        "title": "MaskUpdate",
+        "type": "object"
+      },
+      "ModulationPercentileBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "modulation_percentile",
+            "default": "modulation_percentile",
+            "title": "Mode",
+            "type": "string"
+          },
+          "percentile": {
+            "default": 25.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Percentile",
+            "type": "number"
+          }
+        },
+        "title": "ModulationPercentileBaseline",
+        "type": "object"
+      },
+      "NoneBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "none",
+            "default": "none",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "NoneBaseline",
+        "type": "object"
+      },
+      "OpenDocumentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fid",
+                  "ms"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ProcessingParams"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "OpenDocumentRequest",
+        "type": "object"
+      },
+      "OperationCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "add",
+            "enum": [
+              "add",
+              "subtract"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "shape": {
+            "discriminator": {
+              "mapping": {
+                "lasso": "#/components/schemas/PolygonShape",
+                "polygon": "#/components/schemas/PolygonShape",
+                "rect": "#/components/schemas/RectShape"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RectShape"
+              },
+              {
+                "$ref": "#/components/schemas/PolygonShape"
+              }
+            ],
+            "title": "Shape"
+          }
+        },
+        "required": [
+          "shape"
+        ],
+        "title": "OperationCreate",
+        "type": "object"
+      },
+      "OperationInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "add",
+              "subtract"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "shape": {
+            "additionalProperties": true,
+            "title": "Shape",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "mode",
+          "shape"
+        ],
+        "title": "OperationInfo",
+        "type": "object"
+      },
+      "OperationUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "shape": {
+            "discriminator": {
+              "mapping": {
+                "lasso": "#/components/schemas/PolygonShape",
+                "polygon": "#/components/schemas/PolygonShape",
+                "rect": "#/components/schemas/RectShape"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RectShape"
+              },
+              {
+                "$ref": "#/components/schemas/PolygonShape"
+              }
+            ],
+            "title": "Shape"
+          }
+        },
+        "required": [
+          "shape"
+        ],
+        "title": "OperationUpdate",
+        "type": "object"
+      },
+      "Overlap": {
+        "additionalProperties": true,
+        "properties": {
+          "a": {
+            "title": "A",
+            "type": "string"
+          },
+          "b": {
+            "title": "B",
+            "type": "string"
+          },
+          "n_pixels": {
+            "title": "N Pixels",
+            "type": "integer"
+          },
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "a",
+          "b",
+          "names",
+          "n_pixels"
+        ],
+        "title": "Overlap",
+        "type": "object"
+      },
+      "PeakEdit": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "delete": {
+            "default": false,
+            "title": "Delete",
+            "type": "boolean"
+          },
+          "hit_rank": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hit of the current selection",
+            "title": "Hit Rank"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "peak_id": {
+            "title": "Peak Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "peak_id"
+        ],
+        "title": "PeakEdit",
+        "type": "object"
+      },
+      "PeakTable": {
+        "additionalProperties": true,
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "libraries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Libraries",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "snr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snr"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "stale_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale Reason"
+          }
+        },
+        "required": [
+          "document_id",
+          "columns",
+          "rows",
+          "stale",
+          "stale_reason",
+          "libraries",
+          "baseline",
+          "snr"
+        ],
+        "title": "PeakTable",
+        "type": "object"
+      },
+      "PolygonShape": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "default": "polygon",
+            "enum": [
+              "polygon",
+              "lasso"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "vertices": {
+            "description": "[RT1 min, RT2 s]; a lasso is simplified",
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "minItems": 3,
+            "title": "Vertices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vertices"
+        ],
+        "title": "PolygonShape",
+        "type": "object"
+      },
+      "ProcessingParams": {
+        "additionalProperties": false,
+        "description": "Processing parameters. FID: ``modulation_time``, ``sampling_interval``,\n``shift`` (points), ``solvent_cutoff``, ``baseline`` (stridewise, global,\nnone), ``normalize``. MS: ``modulation_time``, ``shift`` (scans),\n``baseline`` (a model), ``snr``.",
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "enum": [
+                  "stridewise",
+                  "global",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "discriminator": {
+                  "mapping": {
+                    "local": "#/components/schemas/LocalBaseline",
+                    "modulation_percentile": "#/components/schemas/ModulationPercentileBaseline",
+                    "none": "#/components/schemas/NoneBaseline",
+                    "reference": "#/components/schemas/ReferenceBaseline",
+                    "rolling_percentile": "#/components/schemas/RollingPercentileBaseline"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NoneBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ModulationPercentileBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RollingPercentileBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LocalBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReferenceBaseline"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
+          },
+          "modulation_time": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "s",
+            "title": "Modulation Time"
+          },
+          "normalize": {
+            "anyOf": [
+              {
+                "enum": [
+                  "volume",
+                  "max",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalize"
+          },
+          "sampling_interval": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "s (FID)",
+            "title": "Sampling Interval"
+          },
+          "shift": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift"
+          },
+          "snr": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Channel zeroing S/N (MS)",
+            "title": "Snr"
+          },
+          "solvent_cutoff": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "min (FID)",
+            "title": "Solvent Cutoff"
+          }
+        },
+        "title": "ProcessingParams",
+        "type": "object"
+      },
+      "RectShape": {
+        "additionalProperties": false,
+        "properties": {
+          "rt1": {
+            "description": "min",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Rt1",
+            "type": "array"
+          },
+          "rt2": {
+            "description": "s",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Rt2",
+            "type": "array"
+          },
+          "type": {
+            "const": "rect",
+            "default": "rect",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rt1",
+          "rt2"
+        ],
+        "title": "RectShape",
+        "type": "object"
+      },
+      "ReferenceBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "image_model": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "modulation_percentile": "#/components/schemas/ModulationPercentileBaseline",
+                    "none": "#/components/schemas/NoneBaseline",
+                    "rolling_percentile": "#/components/schemas/RollingPercentileBaseline"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NoneBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ModulationPercentileBaseline"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RollingPercentileBaseline"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Model"
+          },
+          "mode": {
+            "const": "reference",
+            "default": "reference",
+            "title": "Mode",
+            "type": "string"
+          },
+          "n_scans": {
+            "default": 3,
+            "minimum": 1.0,
+            "title": "N Scans",
+            "type": "integer"
+          },
+          "scan": {
+            "description": "Centre scan of the background",
+            "minimum": 0.0,
+            "title": "Scan",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scan"
+        ],
+        "title": "ReferenceBaseline",
+        "type": "object"
+      },
+      "RollingPercentileBaseline": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "const": "rolling_percentile",
+            "default": "rolling_percentile",
+            "title": "Mode",
+            "type": "string"
+          },
+          "percentile": {
+            "default": 25.0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Percentile",
+            "type": "number"
+          },
+          "window": {
+            "default": 2,
+            "description": "Modulations on each side",
+            "minimum": 0.0,
+            "title": "Window",
+            "type": "integer"
+          }
+        },
+        "title": "RollingPercentileBaseline",
+        "type": "object"
+      },
+      "SearchRequest": {
+        "additionalProperties": false,
+        "description": "Search a point of a document (selecting it) or an explicit spectrum.",
+        "properties": {
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "mod_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mod Index"
+          },
+          "n_average": {
+            "default": 3,
+            "minimum": 1.0,
+            "title": "N Average",
+            "type": "integer"
+          },
+          "n_hits": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Hits"
+          },
+          "rt2_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rt2 Index"
+          },
+          "snap": {
+            "default": true,
+            "title": "Snap",
+            "type": "boolean"
+          },
+          "spectrum": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpectrumIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "SearchRequest",
+        "type": "object"
+      },
+      "SelectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mod_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mod Index"
+          },
+          "n_average": {
+            "default": 3,
+            "minimum": 1.0,
+            "title": "N Average",
+            "type": "integer"
+          },
+          "rt2_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rt2 Index"
+          },
+          "scan": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scan"
+          },
+          "snap": {
+            "default": true,
+            "title": "Snap",
+            "type": "boolean"
+          }
+        },
+        "title": "SelectRequest",
+        "type": "object"
+      },
+      "SelectionInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "hits": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HitInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hits"
+          },
+          "libraries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Libraries",
+            "type": "array"
+          },
+          "mod_index": {
+            "title": "Mod Index",
+            "type": "integer"
+          },
+          "n_average": {
+            "title": "N Average",
+            "type": "integer"
+          },
+          "rt1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rt1"
+          },
+          "rt2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rt2"
+          },
+          "rt2_index": {
+            "title": "Rt2 Index",
+            "type": "integer"
+          },
+          "scan": {
+            "title": "Scan",
+            "type": "integer"
+          },
+          "snap": {
+            "title": "Snap",
+            "type": "boolean"
+          },
+          "snr": {
+            "title": "Snr",
+            "type": "number"
+          }
+        },
+        "required": [
+          "document_id",
+          "rt2_index",
+          "mod_index",
+          "scan",
+          "rt1",
+          "rt2",
+          "n_average",
+          "snap",
+          "baseline",
+          "snr",
+          "hits",
+          "libraries"
+        ],
+        "title": "SelectionInfo",
+        "type": "object"
+      },
+      "SessionInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentInfo"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobInfo"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "libraries": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryInfo"
+            },
+            "title": "Libraries",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "revision",
+          "documents",
+          "libraries",
+          "jobs",
+          "settings"
+        ],
+        "title": "SessionInfo",
+        "type": "object"
+      },
+      "SignalRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mz": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Mz",
+            "type": "array"
+          },
+          "signal": {
+            "default": "tic",
+            "enum": [
+              "tic",
+              "eic"
+            ],
+            "title": "Signal",
+            "type": "string"
+          }
+        },
+        "title": "SignalRequest",
+        "type": "object"
+      },
+      "SpectrumIn": {
+        "additionalProperties": false,
+        "properties": {
+          "intensity": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Intensity",
+            "type": "array"
+          },
+          "mz": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Mz",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mz",
+          "intensity"
+        ],
+        "title": "SpectrumIn",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "pyGCxGC",
+    "version": "0.0.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/documents": {
+      "get": {
+        "operationId": "list_documents_api_documents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentInfo"
+                  },
+                  "title": "Response List Documents Api Documents Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "List Documents"
+      },
+      "post": {
+        "description": "Open a file; the job result is ``{\"document_id\": ...}``.",
+        "operationId": "open_document_api_documents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenDocumentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Document"
+      }
+    },
+    "/api/documents/{doc_id}": {
+      "delete": {
+        "operationId": "close_document_api_documents__doc_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Document"
+      },
+      "get": {
+        "operationId": "get_document_api_documents__doc_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Document"
+      },
+      "patch": {
+        "description": "Change processing parameters and recompute (job).",
+        "operationId": "update_document_api_documents__doc_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProcessingParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Document"
+      }
+    },
+    "/api/documents/{doc_id}/export": {
+      "post": {
+        "description": "Write to ``path`` (returns the path) or return the file as a download.",
+        "operationId": "export_api_documents__doc_id__export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResult"
+                }
+              },
+              "application/octet-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export"
+      }
+    },
+    "/api/documents/{doc_id}/image": {
+      "get": {
+        "description": "2D image, ``float32``, ``(n_rt2, n_mod)`` with row 0 = lowest RT2.\n\nThe header's ``rt1``/``rt2`` axes describe the returned pixels (after\n``region`` and pooling); ``region`` and ``full_shape`` locate them in\nthe full image.",
+        "operationId": "get_image_api_documents__doc_id__image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "signal",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "tic",
+                    "eic"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Signal"
+            }
+          },
+          {
+            "description": "e.g. \"91,105\"",
+            "in": "query",
+            "name": "mz",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "e.g. \"91,105\"",
+              "title": "Mz"
+            }
+          },
+          {
+            "description": "Max-pool larger images",
+            "in": "query",
+            "name": "max_size",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 16,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max-pool larger images",
+              "title": "Max Size"
+            }
+          },
+          {
+            "description": "\"row0,row1,col0,col1\": a half-open window of the full image (clipped to it), taken before pooling",
+            "in": "query",
+            "name": "region",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "\"row0,row1,col0,col1\": a half-open window of the full image (clipped to it), taken before pooling",
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.pygcxgc.array": {}
+            },
+            "description": "Binary array"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image"
+      }
+    },
+    "/api/documents/{doc_id}/integration": {
+      "get": {
+        "operationId": "integration_api_documents__doc_id__integration_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Integration"
+      }
+    },
+    "/api/documents/{doc_id}/masks": {
+      "get": {
+        "operationId": "get_masks_api_documents__doc_id__masks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Masks"
+      },
+      "post": {
+        "operationId": "create_mask_api_documents__doc_id__masks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Mask"
+      }
+    },
+    "/api/documents/{doc_id}/masks/import": {
+      "post": {
+        "description": "Import masks from a file or folder, another document or a mask set.",
+        "operationId": "import_masks_api_documents__doc_id__masks_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Masks"
+      }
+    },
+    "/api/documents/{doc_id}/masks/redo": {
+      "post": {
+        "operationId": "redo_api_documents__doc_id__masks_redo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Redo"
+      }
+    },
+    "/api/documents/{doc_id}/masks/undo": {
+      "post": {
+        "operationId": "undo_api_documents__doc_id__masks_undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo"
+      }
+    },
+    "/api/documents/{doc_id}/masks/{mask_id}": {
+      "delete": {
+        "operationId": "delete_mask_api_documents__doc_id__masks__mask_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Mask"
+      },
+      "patch": {
+        "operationId": "update_mask_api_documents__doc_id__masks__mask_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaskUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Mask"
+      }
+    },
+    "/api/documents/{doc_id}/masks/{mask_id}/duplicate": {
+      "post": {
+        "operationId": "duplicate_mask_api_documents__doc_id__masks__mask_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Mask"
+      }
+    },
+    "/api/documents/{doc_id}/masks/{mask_id}/operations": {
+      "post": {
+        "description": "Add or subtract a rectangle, polygon or lasso.",
+        "operationId": "add_shape_api_documents__doc_id__masks__mask_id__operations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Shape"
+      }
+    },
+    "/api/documents/{doc_id}/masks/{mask_id}/operations/{op_id}": {
+      "delete": {
+        "operationId": "delete_shape_api_documents__doc_id__masks__mask_id__operations__op_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "op_id",
+            "required": true,
+            "schema": {
+              "title": "Op Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Shape"
+      },
+      "put": {
+        "operationId": "replace_shape_api_documents__doc_id__masks__mask_id__operations__op_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "op_id",
+            "required": true,
+            "schema": {
+              "title": "Op Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaskSetInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Shape"
+      }
+    },
+    "/api/documents/{doc_id}/masks/{mask_id}/raster": {
+      "get": {
+        "description": "Pixel weights (``uint8``, 255 = inside) in the image layout.",
+        "operationId": "mask_raster_api_documents__doc_id__masks__mask_id__raster_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "mask_id",
+            "required": true,
+            "schema": {
+              "title": "Mask Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.pygcxgc.array": {}
+            },
+            "description": "Binary array"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mask Raster"
+      }
+    },
+    "/api/documents/{doc_id}/peaks": {
+      "get": {
+        "operationId": "get_peaks_api_documents__doc_id__peaks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PeakTable"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Peaks Api Documents  Doc Id  Peaks Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Peaks"
+      },
+      "patch": {
+        "description": "Rename, assign a hit, categorise or delete peaks.",
+        "operationId": "edit_peaks_api_documents__doc_id__peaks_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "$ref": "#/components/schemas/PeakEdit"
+                },
+                "title": "Edits",
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Peaks"
+      },
+      "post": {
+        "operationId": "detect_api_documents__doc_id__peaks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DetectPeaksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detect"
+      }
+    },
+    "/api/documents/{doc_id}/selection": {
+      "get": {
+        "operationId": "get_selection_api_documents__doc_id__selection_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SelectionInfo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Selection Api Documents  Doc Id  Selection Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Selection"
+      },
+      "put": {
+        "description": "Select a point (without searching).",
+        "operationId": "select_api_documents__doc_id__selection_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectionInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select"
+      }
+    },
+    "/api/documents/{doc_id}/signal": {
+      "put": {
+        "description": "Switch an MS document between TIC and EIC (job).",
+        "operationId": "set_signal_api_documents__doc_id__signal_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Signal"
+      }
+    },
+    "/api/documents/{doc_id}/spectrum": {
+      "get": {
+        "description": "Spectrum at a point (or of the selection when no point is given):\n``float32`` ``(n_mz, 3)`` with the columns ``mz``, ``raw``, ``corrected``.",
+        "operationId": "get_spectrum_api_documents__doc_id__spectrum_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rt2_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rt2 Index"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mod_index",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mod Index"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scan",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scan"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snap",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Snap",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "n_average",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "minimum": 1,
+              "title": "N Average",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.pygcxgc.array": {}
+            },
+            "description": "Binary array"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Spectrum"
+      }
+    },
+    "/api/fs": {
+      "get": {
+        "operationId": "list_files_api_fs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Path"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hidden",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Hidden",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsListing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Files"
+      }
+    },
+    "/api/fs/probe": {
+      "get": {
+        "description": "Detect the kind of a file (FID or MS) before opening it.",
+        "operationId": "probe_file_api_fs_probe_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileProbe"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe File"
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobInfo"
+                  },
+                  "title": "Response List Jobs Api Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "List Jobs"
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "delete": {
+        "operationId": "cancel_job_api_jobs__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Job"
+      },
+      "get": {
+        "operationId": "get_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job"
+      }
+    },
+    "/api/libraries": {
+      "get": {
+        "operationId": "list_libraries_api_libraries_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LibraryInfo"
+                  },
+                  "title": "Response List Libraries Api Libraries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "List Libraries"
+      },
+      "post": {
+        "description": "Load a library (or download MoNA with ``path=\"mona\"``) as a job.",
+        "operationId": "add_library_api_libraries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Library"
+      }
+    },
+    "/api/libraries/{library_id}": {
+      "delete": {
+        "operationId": "remove_library_api_libraries__library_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Library"
+      },
+      "patch": {
+        "operationId": "update_library_api_libraries__library_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "title": "Library Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Library"
+      }
+    },
+    "/api/libraries/{library_id}/spectra/{index}": {
+      "get": {
+        "description": "One library spectrum, ``float32`` ``(n_peaks, 2)``: ``mz``, ``intensity``.",
+        "operationId": "library_spectrum_api_libraries__library_id__spectra__index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.pygcxgc.array": {}
+            },
+            "description": "Binary array"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library Spectrum"
+      }
+    },
+    "/api/search": {
+      "post": {
+        "description": "Search the active libraries. With a document and a point, the point is\nselected first; with a document only, its selection is searched.",
+        "operationId": "search_api_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectionInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search"
+      }
+    },
+    "/api/session": {
+      "get": {
+        "operationId": "get_session_api_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Get Session"
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "get_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Settings Api Settings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Get Settings"
+      },
+      "put": {
+        "description": "Merge ``changes`` into the settings (nested objects are merged).",
+        "operationId": "put_settings_api_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Changes",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Settings Api Settings Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Settings"
+      }
+    }
+  }
+}

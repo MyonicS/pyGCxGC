@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Selectable GCxGC-MS baseline models (`pyGCxGC.ms.baseline`): `none`, `modulation_percentile` (default, unchanged results), `rolling_percentile`, and the spectra-only `local` and `reference`; `GCxGC_MS(baseline=...)` and `set_baseline`.
 - Library entries keep structure identifiers from MSP files (`smiles`, `inchi`, `inchikey`, `pubchem_cid`); library cache version 2.
 - App backend (`pyGCxGC.app`, extra `app`): a `Session` with documents, jobs and events, and a local HTTP/WebSocket API with token security and binary arrays (`python -m pyGCxGC.app`).
+- App frontend, milestone 1 (`frontend/`, React + TypeScript, served by `python -m pyGCxGC.app --open`): light/dark/system themes, dockable FID and MS layouts, document tabs, file browser, status bar with cursor readout and jobs, error toasts with tracebacks, command palette and shortcuts; a WebGL2 chromatogram view with matplotlib colour maps, linear/square root/cube root/log scaling, contrast histogram, nearest/bilinear/bicubic interpolation (as matplotlib), zoom and pan at 60 fps, and overlays; the FID Processing panel with a live phase-shift preview.
+- API: `GET /api/fs/probe` and a `region` parameter for images.
 
 ### Changed
 
@@ -26,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - The mask creator could not load chromatograms or load and save masks (`pathlib.Path` was shadowed by `matplotlib.path.Path`).
+- `document.updated` events carried the previous document revision.
 
 ## [0.0.1]
 

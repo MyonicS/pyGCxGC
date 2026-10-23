@@ -25,6 +25,9 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--no-restore", action="store_true", help="do not load the saved libraries"
     )
+    parser.add_argument(
+        "--open", action="store_true", help="open the app in the web browser"
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -50,8 +53,13 @@ def main(argv=None) -> int:
         session.open_document(path, params=params)
 
     def ready(port: int, token: str) -> None:
+        url = f"http://127.0.0.1:{port}/?token={token}"
         print(f"READY {port}", flush=True)  # noqa: T201
-        print(f"http://127.0.0.1:{port}/?token={token}", flush=True)  # noqa: T201
+        print(url, flush=True)  # noqa: T201
+        if args.open:
+            import webbrowser
+
+            webbrowser.open(url)
 
     serve(session, port=args.port, token=args.token, on_ready=ready)
     return 0

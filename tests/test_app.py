@@ -557,6 +557,24 @@ def test_api_events(client, ms_files):
     assert revisions == sorted(revisions)
 
 
+def test_document_events_carry_the_new_revision(session, ms_files):
+    """The info in a document.updated event has the revision of the event."""
+    cdf, _, _ = ms_files
+    events = []
+    session.subscribe(events.append)
+    doc_id = session.wait(session.open_document(cdf, params={"modulation_time": 4}))[
+        "document_id"
+    ]
+    session.wait(session.update_document(doc_id, shift=2))
+    updates = [e for e in events if e["type"] == "document.updated"]
+    assert [u["document"]["revision"] for u in updates] == [
+        u["revision"] for u in updates
+    ]
+    assert updates[-1]["document"]["params"]["shift"] == 2
+    assert session.document(doc_id).revision == updates[-1]["revision"]
+    assert session.image(doc_id).revision == updates[-1]["revision"]
+
+
 def test_api_jobs_and_errors(client, tmp_path):
     session = client.app.state.session
 
@@ -630,6 +648,76 @@ def test_openapi_schema(client):
         "BaselineSpec" in json.dumps(schema)
         or "LocalBaseline" in schema["components"]["schemas"]
     )
+
+
+def test_openapi_snapshot_is_current(client):
+    """frontend/openapi.json (input of the TypeScript types) matches the API."""
+    sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
+    try:
+        import export_openapi
+    finally:
+        sys.path.pop(0)
+    if not export_openapi.OUT.exists():
+        pytest.skip("no frontend/openapi.json")
+    current = export_openapi.dumps(client.app.openapi())
+    assert export_openapi.OUT.read_text("utf-8") == current, (
+        "The API changed: run `python scripts/export_openapi.py` and "
+        "`pnpm gen:api` in frontend/"
+    )
+
+
+def test_api_probe_file(client, ms_files, tmp_path):
+    cdf, _, _ = ms_files
+    probe = client.get("/api/fs/probe", params={"path": str(cdf)}).json()
+    assert probe["kind"] == "ms"
+    assert probe["error"] is None
+    assert not probe["needs_modulation_time"]
+
+    probe = client.get("/api/fs/probe", params={"path": str(FID_CSV)}).json()
+    assert probe["kind"] == "fid"
+    assert probe["needs_modulation_time"]
+    client.put("/api/settings", json={"fid": {"modulation_time": 20}})
+    probe = client.get("/api/fs/probe", params={"path": str(FID_CSV)}).json()
+    assert not probe["needs_modulation_time"]
+
+    (tmp_path / "x.bin").write_bytes(b"\0" * 10)
+    probe = client.get("/api/fs/probe", params={"path": str(tmp_path / "x.bin")})
+    assert probe.json()["kind"] is None
+    assert "Unsupported" in probe.json()["error"]
+    probe = client.get("/api/fs/probe", params={"path": str(tmp_path / "missing")})
+    assert "not found" in probe.json()["error"]
+
+
+def test_api_image_region(client, ms_files):
+    cdf, _, _ = ms_files
+    r = client.post(
+        "/api/documents", json={"path": str(cdf), "params": {"modulation_time": 4}}
+    )
+    doc_id = wait_job(client, r)["document_id"]
+    url = f"/api/documents/{doc_id}/image"
+    full_header, full = decode_array(client.get(url).content)
+    assert full_header["region"] == [0, 80, 0, 40]
+    assert full_header["full_shape"] == [80, 40]
+
+    header, part = decode_array(client.get(url, params={"region": "10,30,5,9"}).content)
+    np.testing.assert_array_equal(part, full[10:30, 5:9])
+    assert header["region"] == [10, 30, 5, 9]
+    assert header["rt1"]["start"] == pytest.approx(
+        full_header["rt1"]["start"] + 5 * full_header["rt1"]["step"]
+    )
+    assert header["rt2"]["start"] == pytest.approx(10 * 0.05)
+    assert header["rt2"]["count"] == 20
+
+    # clipped to the image, then pooled
+    params = {"region": "-5,100,30,99", "max_size": 16}
+    header, pooled = decode_array(client.get(url, params=params).content)
+    assert header["region"] == [0, 80, 30, 40]
+    assert header["pool"] == [5, 1]
+    np.testing.assert_array_equal(pooled, max_pool(full[:, 30:], 16, 16)[0])
+    assert header["rt2"]["step"] == pytest.approx(0.25)
+
+    assert client.get(url, params={"region": "1,2,3"}).status_code == 400
+    assert client.get(url, params={"region": "90,99,0,5"}).status_code == 400
 
 
 @pytest.mark.skipif(not PY_010.exists(), reason="no local GCxGC-MS data")

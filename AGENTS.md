@@ -14,7 +14,19 @@ uv pip install -e .               # needed for the console scripts
     src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py tests/test_masks.py \
     tests/test_app.py tests/synthetic.py
 .venv/bin/ruff format <files you touched>
-.venv/bin/python -m pyGCxGC.app [file] [-l LIBRARY]   # app server: prints READY <port> and the URL with the token
+.venv/bin/python -m pyGCxGC.app [file] [-l LIBRARY] [--open]   # app server: prints READY <port> and the URL with the token
+```
+
+Frontend (`frontend/`, pnpm, Node >= 22):
+
+```bash
+cd frontend && pnpm install
+pnpm build                      # -> src/pyGCxGC/app/static (served by the app server, not committed)
+pnpm dev                        # with: python -m pyGCxGC.app --port 8765 --token dev; open localhost:5173/?token=dev
+pnpm lint && pnpm typecheck
+CHROMIUM_PATH=/usr/bin/chromium pnpm test      # Vitest: unit + shader tests in Chromium
+CHROMIUM_PATH=/usr/bin/chromium pnpm test:e2e  # Playwright, needs `pnpm build`; --update-snapshots after UI changes
+python scripts/export_openapi.py && pnpm gen:api   # after any API change (tests check both)
 ```
 
 The older modules (`main.py`, `parsing.py`, `processing.py`, `gui/mask_creator.py`)
@@ -42,6 +54,12 @@ files you change, and do not reformat untouched legacy code.
 | `tests/test_masks.py`, `tests/test_app.py` | `MaskSet`; `Session` and the API (FastAPI `TestClient`) |
 | `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
+| `frontend/src/api/` | Transport (HTTP + WebSocket, spec NB-4), typed client, binary array decoder; `schema.d.ts` is generated |
+| `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events), `view` (display, zoom, tool), `images` (overview + detail layers) |
+| `frontend/src/chromatogram/` | WebGL2 renderer (`renderer.ts`, all display maths in the shader), view, axes, colour bar, overlays, Display popover |
+| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts, open dialog, settings, command palette; Processing panel, placeholders |
+| `frontend/e2e/` | Playwright tests; `backend.py` serves a session with the example FID and a synthetic MS run |
+| `scripts/export_*.py` | Generated frontend inputs: colour maps, OpenAPI snapshot, matplotlib interpolation reference |
 | `specs/app.md` | Specification of the new desktop/web app (React frontend on a FastAPI session layer). Read it before working on `frontend/`, `desktop/` or `pyGCxGC.app` |
 | `docs/roadmap.md` | Planned features beyond the app: group-type/region classification, agent skills and MCP server |
 
@@ -126,6 +144,22 @@ files you change, and do not reformat untouched legacy code.
   serve `/api/events`.
 * The mask creator imported `matplotlib.path.Path` over `pathlib.Path`, which
   broke loading and saving files; it is now imported as `MplPath`.
+* **Frontend facts.** The root `.gitignore` rules `lib/`/`lib64/` are anchored
+  (`/lib/`) because they also hid `frontend/src/lib/` from git and from
+  Tailwind's class scanning. dockview's React bindings are `dockview-react` (v8
+  `dockview` is core only). shadcn's `cn` import is the `cn` npm package by
+  shadcn. `CommandDialog` needs a `<Command>` inside. Store selectors must not
+  return fresh objects/arrays (zustand v5 loops), use module constants.
+* **Shader fidelity.** matplotlib's `bicubic` is Agg's cubic **B-spline**
+  (smoothing, not Catmull-Rom); `renderer.browser.test.ts` compares the shader
+  with `matplotlib._image.resample` output. matplotlib's `gray` table truncates
+  (`(i/255*255).astype(uint8)`), so entry `i` can be `i - 1`.
+* **Revisions.** `document.updated` payloads carry the new revision (fixed in
+  `Session.emit`; the info used to be taken before the bump). The frontend
+  refetches an image when `doc.revision` changes.
+* Screenshots and frame timing: headless Chromium can use the real GPU with
+  `--use-angle=vulkan --enable-features=Vulkan` (or `gl-egl`); the tests use
+  SwiftShader for determinism.
 * Smoke-testing the GUI: create `tk.Tk()`, construct `MSViewer(root, data,
   library, 20.0)`, drive it with `root.after(...)` callbacks (e.g.
   `select_scan`, `find_peaks`) and `root.destroy()` when done. A display is

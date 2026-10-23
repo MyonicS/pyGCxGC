@@ -386,6 +386,17 @@ class FsListing(Info):
     entries: list[FsEntry]
 
 
+class FileProbe(Info):
+    """What opening a file would do (``kind`` is ``None`` with an ``error``)."""
+
+    path: str
+    name: str
+    size: int | None
+    kind: Literal["fid", "ms"] | None
+    error: str | None
+    needs_modulation_time: bool
+
+
 class ErrorResponse(Info):
     detail: str
     type: str

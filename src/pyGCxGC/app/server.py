@@ -136,6 +136,23 @@ def parse_mz(text: str | None) -> list[int]:
         raise InvalidRequest(f"Invalid m/z list {text!r}") from None
 
 
+def parse_region(text: str | None, n_rows: int, n_cols: int) -> tuple[int, ...]:
+    """``"row0,row1,col0,col1"`` clipped to the image (whole image if omitted)."""
+    if not text:
+        return (0, n_rows, 0, n_cols)
+    try:
+        r0, r1, c0, c1 = (int(x) for x in text.split(","))
+    except ValueError:
+        raise InvalidRequest(
+            f"Invalid region {text!r} (use row0,row1,col0,col1)"
+        ) from None
+    r0, r1 = max(r0, 0), min(r1, n_rows)
+    c0, c1 = max(c0, 0), min(c1, n_cols)
+    if r0 >= r1 or c0 >= c1:
+        raise InvalidRequest(f"The region {text!r} is outside the image")
+    return (r0, r1, c0, c1)
+
+
 def _params(model) -> dict:
     return model.model_dump(exclude_none=True)
 
@@ -208,6 +225,11 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
     def list_files(path: str | None = None, hidden: bool = False):
         return session.list_dir(path, hidden)
 
+    @api.get("/fs/probe", response_model=S.FileProbe)
+    def probe_file(path: str):
+        """Detect the kind of a file (FID or MS) before opening it."""
+        return session.probe_file(path)
+
     # -------------------------------------------------------------- jobs
     @api.get("/jobs", response_model=list[S.JobInfo])
     def list_jobs():
@@ -258,13 +280,29 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
         signal: Literal["tic", "eic"] | None = None,
         mz: str | None = Query(None, description='e.g. "91,105"'),
         max_size: int | None = Query(None, ge=16, description="Max-pool larger images"),
+        region: str | None = Query(
+            None,
+            description='"row0,row1,col0,col1": a half-open window of the full '
+            "image (clipped to it), taken before pooling",
+        ),
     ):
-        """2D image, ``float32``, ``(n_rt2, n_mod)`` with row 0 = lowest RT2."""
+        """
+        2D image, ``float32``, ``(n_rt2, n_mod)`` with row 0 = lowest RT2.
+
+        The header's ``rt1``/``rt2`` axes describe the returned pixels (after
+        ``region`` and pooling); ``region`` and ``full_shape`` locate them in
+        the full image.
+        """
         result = session.image(doc_id, signal, parse_mz(mz) if mz is not None else None)
         data, fr, fc = result.data, 1, 1
+        n_rows, n_cols = data.shape
+        r0, r1, c0, c1 = parse_region(region, n_rows, n_cols)
+        data = data[r0:r1, c0:c1]
         if max_size:
             data, fr, fc = max_pool(data, max_size, max_size)
         header = grid_header(result.grid)
+        header["rt1"]["start"] += c0 * header["rt1"]["step"]
+        header["rt2"]["start"] += r0 * header["rt2"]["step"]
         header["rt1"]["step"] *= fc
         header["rt2"]["step"] *= fr
         header["rt1"]["count"], header["rt2"]["count"] = data.shape[1], data.shape[0]
@@ -274,6 +312,8 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
             signal=result.signal,
             mz=result.mz,
             pool=[fr, fc],
+            region=[r0, r1, c0, c1],
+            full_shape=[n_rows, n_cols],
             min=float(data.min()) if data.size else 0.0,
             max=float(data.max()) if data.size else 0.0,
         )

@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+openapi.json
+src/api/schema.d.ts
+src/colormaps.json
+test-results
+playwright-report

@@ -1,0 +1,220 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+@import 'dockview-react/dist/styles/dockview.css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens (spec THEME-2). Every colour is a CSS variable defined for
+ * both themes; plots, axes, overlays and tooltips use the same tokens.
+ * Colour maps do not change with the theme (THEME-3).
+ */
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --font-heading: var(--font-sans);
+  --color-chrome: var(--chrome);
+  --color-overlay: var(--overlay);
+  --color-panel: var(--panel);
+  --color-plot-bg: var(--plot-bg);
+  --color-plot-axis: var(--plot-axis);
+  --color-plot-text: var(--plot-text);
+  --color-plot-crosshair: var(--plot-crosshair);
+  --color-plot-halo: var(--plot-halo);
+  --color-plot-marker: var(--plot-marker);
+  --color-plot-zoom: var(--plot-zoom);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  color-scheme: light;
+  --radius: 0.5rem;
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.2 0.01 255);
+  --chrome: oklch(0.955 0.004 250);
+  --panel: oklch(1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.5 0.16 255);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.945 0.006 250);
+  --secondary-foreground: oklch(0.25 0.01 255);
+  --muted: oklch(0.95 0.005 250);
+  --muted-foreground: oklch(0.47 0.015 255);
+  --accent: oklch(0.93 0.012 250);
+  --accent-foreground: oklch(0.22 0.01 255);
+  --destructive: oklch(0.55 0.21 27);
+  --success: oklch(0.52 0.13 150);
+  --warning: oklch(0.6 0.14 70);
+  --border: oklch(0.89 0.006 250);
+  --input: oklch(0.87 0.008 250);
+  --ring: oklch(0.6 0.13 255);
+
+  --overlay: oklch(0.2 0.01 255 / 0.18);
+
+  --plot-bg: oklch(0.955 0.004 250);
+  --plot-axis: oklch(0.55 0.012 255);
+  --plot-text: oklch(0.4 0.015 255);
+  --plot-crosshair: oklch(1 0 0 / 0.9);
+  --plot-halo: oklch(0 0 0 / 0.55);
+  --plot-marker: oklch(1 0 0);
+  --plot-zoom: oklch(0.5 0.16 255);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.17 0.006 255);
+  --foreground: oklch(0.94 0.005 250);
+  --chrome: oklch(0.2 0.007 255);
+  --panel: oklch(0.16 0.006 255);
+  --card: oklch(0.21 0.007 255);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.22 0.008 255);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.7 0.14 250);
+  --primary-foreground: oklch(0.18 0.02 255);
+  --secondary: oklch(0.26 0.008 255);
+  --secondary-foreground: oklch(0.94 0.005 250);
+  --muted: oklch(0.25 0.008 255);
+  --muted-foreground: oklch(0.72 0.012 250);
+  --accent: oklch(0.28 0.012 255);
+  --accent-foreground: oklch(0.96 0.005 250);
+  --destructive: oklch(0.68 0.19 24);
+  --success: oklch(0.72 0.14 150);
+  --warning: oklch(0.8 0.13 80);
+  --border: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.15);
+  --ring: oklch(0.6 0.12 250);
+
+  --overlay: oklch(0 0 0 / 0.5);
+
+  --plot-bg: oklch(0.2 0.007 255);
+  --plot-axis: oklch(0.6 0.012 250);
+  --plot-text: oklch(0.8 0.01 250);
+  --plot-crosshair: oklch(1 0 0 / 0.9);
+  --plot-halo: oklch(0 0 0 / 0.6);
+  --plot-marker: oklch(1 0 0);
+  --plot-zoom: oklch(0.75 0.13 250);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    font-size: 15px;
+    @apply font-sans;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* dockview, themed with the same tokens */
+.dockview-theme-pygcxgc {
+  --dv-paneview-active-outline-color: var(--ring);
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-drag-over-background-color: color-mix(in oklch, var(--primary) 22%, transparent);
+  --dv-drag-over-border-color: var(--primary);
+  --dv-drag-over-border: 1px solid var(--primary);
+  --dv-edge-dock-indicator-color: var(--primary);
+  --dv-tabs-container-scrollbar-color: var(--border);
+  --dv-icon-hover-background-color: var(--accent);
+  --dv-floating-box-shadow: 0 8px 32px oklch(0 0 0 / 0.25);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-overlay-z-index: 50;
+  --dv-tab-font-size: inherit;
+  --dv-border-radius: 0px;
+  --dv-tab-margin: 0;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--primary);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.3s;
+  --dv-spacing-padding: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: 6px;
+  --dv-tab-close-icon-size: inherit;
+  --dv-floating-group-border: none;
+  --dv-floating-group-dragging-opacity: 0.5;
+  --dv-floating-titlebar-height: 22px;
+  --dv-floating-titlebar-background-color: var(--chrome);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--border);
+  --dv-group-view-background-color: var(--panel);
+  --dv-tabs-and-actions-container-background-color: var(--chrome);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--chrome);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--chrome);
+  --dv-tab-divider-color: var(--border);
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-scrollbar-background-color: color-mix(in oklch, var(--foreground) 25%, transparent);
+  --dv-context-menu-background-color: var(--popover);
+  --dv-context-menu-color: var(--popover-foreground);
+  font-family: var(--font-sans);
+}
+
+.dockview-theme-pygcxgc .dv-groupview {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.dockview-theme-pygcxgc .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--border);
+}
+
+.dockview-theme-pygcxgc .dv-tab.dv-active-tab {
+  box-shadow: inset 0 2px 0 0 var(--primary);
+}
+
+.dockview-theme-pygcxgc .dv-groupview:not(.dv-active-group) .dv-tab.dv-active-tab {
+  box-shadow: inset 0 2px 0 0 var(--border);
+}

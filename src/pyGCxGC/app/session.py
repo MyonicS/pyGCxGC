@@ -764,6 +764,12 @@ class Session:
             event.update(data)
             if kind == "document.updated" and document_id in self.documents:
                 self.documents[document_id].revision = self._revision
+                # the info was taken before this revision existed
+                if isinstance(event.get("document"), dict):
+                    event["document"] = {
+                        **event["document"],
+                        "revision": self._revision,
+                    }
             subscribers = list(self._subscribers)
         for callback in subscribers:
             with contextlib.suppress(Exception):
@@ -1940,6 +1946,31 @@ class Session:
             "parent": str(p.parent) if p.parent != p else None,
             "entries": entries,
         }
+
+    def probe_file(self, path: str | Path) -> dict:
+        """
+        What opening ``path`` would do, without loading it.
+
+        ``kind`` is ``"fid"`` or ``"ms"`` (``None`` with an ``error`` when the
+        file cannot be opened). ``needs_modulation_time`` is true for FID
+        files when the settings hold no default modulation time.
+        """
+        p = Path(path).expanduser()
+        info = {"path": str(p), "name": p.name, "size": None, "kind": None}
+        info.update(error=None, needs_modulation_time=False)
+        if not p.is_file():
+            info["error"] = f"File not found: {p}"
+            return info
+        try:
+            info["size"] = p.stat().st_size
+            info["kind"] = detect_kind(p)
+        except (OSError, InvalidRequest) as exc:
+            info["error"] = str(exc)
+            return info
+        if info["kind"] == "fid":
+            default = self.settings.get("fid", {}).get("modulation_time")
+            info["needs_modulation_time"] = default is None
+        return info
 
 
 # ------------------------------------------------------------------ helpers

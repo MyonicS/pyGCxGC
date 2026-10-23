@@ -1,0 +1,70 @@
+name: frontend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+          pip install uv
+          uv pip install --system -e "..[app,dev]"
+
+      # spec API-5: the OpenAPI snapshot and the generated types are current
+      - name: API types up to date
+        run: |
+          python ../scripts/export_openapi.py
+          git diff --exit-code openapi.json
+          pnpm check:api
+
+      - name: Lint and type-check
+        run: |
+          pnpm lint
+          pnpm typecheck
+
+      - name: Unit and shader tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
+        env:
+          PYTHON: python
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results
+          path: frontend/test-results
+          retention-days: 7
