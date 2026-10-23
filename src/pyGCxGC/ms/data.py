@@ -9,11 +9,12 @@ directly.
 Background handling
 -------------------
 GC-MS data contain a per-ion background (detector offset, column bleed, air)
-that drifts over the run. For every modulation and every m/z channel a
-baseline (a low percentile of that channel within the modulation) and a noise
-level (scaled median absolute deviation) are estimated. Spectra are baseline
-corrected per ion and channels below ``snr * noise`` are removed, which gives
-clean spectra for library searching without manual background selection.
+that drifts over the run. By default, for every modulation and every m/z
+channel a baseline (a low percentile of that channel within the modulation)
+and a noise level (scaled median absolute deviation) are estimated. Spectra
+are baseline corrected per ion and channels below ``snr * noise`` are removed,
+which gives clean spectra for library searching without manual background
+selection. Other models are in :mod:`pyGCxGC.ms.baseline`.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from pyGCxGC.ms.baseline import BaselineModel, make_baseline
 from pyGCxGC.ms.io import RawMSData, read_ms_file
 
 
@@ -74,12 +76,19 @@ class GCxGC_MS:
         positive value moves peaks to lower second dimension retention times
         (same direction as :func:`pyGCxGC.shift_phase`).
     baseline_percentile : float, default 25
-        Percentile of every ion within a modulation used as its baseline.
+        Percentile of every ion within a modulation used as its baseline
+        (used when ``baseline`` is not given).
     name : str, optional
         Name of the chromatogram.
+    baseline : BaselineModel, str or dict, optional
+        Baseline model (see :mod:`pyGCxGC.ms.baseline`), as a model, a mode
+        name or ``{"mode": name, **params}``. Defaults to
+        ``modulation_percentile`` with ``baseline_percentile``.
 
     Attributes
     ----------
+    baseline : BaselineModel
+        The fitted baseline model.
     tic_2d : np.ndarray
         Baseline corrected TIC as a ``(n_rt2, n_modulations)`` array; row 0 is
         the start of the modulation (``origin="lower"`` when plotting).
@@ -98,10 +107,17 @@ class GCxGC_MS:
         shift: int = 0,
         baseline_percentile: float = 25.0,
         name: str | None = None,
+        baseline: BaselineModel | str | dict | None = None,
     ):
         self.raw = raw
         self.name = name or raw.metadata.get("source", "GCxGC-MS")
         self.baseline_percentile = baseline_percentile
+        if baseline is None:
+            baseline = {
+                "mode": "modulation_percentile",
+                "percentile": baseline_percentile,
+            }
+        self.baseline = make_baseline(baseline)
         self.sampling_interval = float(np.median(np.diff(raw.scan_times)))
         self._configure(modulation_time, shift)
 
@@ -134,7 +150,8 @@ class GCxGC_MS:
         return (
             f"GCxGC_MS(name={self.name!r}, scans={self.n_scans}, "
             f"m/z={self.mass_range[0]}-{self.mass_range[1]}, "
-            f"modulation={self.modulation_time} s, modulations={self.n_modulations})"
+            f"modulation={self.modulation_time} s, modulations={self.n_modulations}, "
+            f"baseline={self.baseline.describe()})"
         )
 
     # ------------------------------------------------------------ folding
@@ -146,6 +163,20 @@ class GCxGC_MS:
             self.modulation_time if modulation_time is None else modulation_time,
             self.shift if shift is None else shift,
         )
+
+    def set_baseline(self, baseline: BaselineModel | str | dict | None, **params):
+        """
+        Change the baseline model and recompute the background corrected TIC.
+
+        Parameters
+        ----------
+        baseline : BaselineModel, str or dict
+            See :func:`pyGCxGC.ms.baseline.make_baseline`.
+        **params
+            Parameters of the model, when ``baseline`` is a mode name.
+        """
+        self.baseline = make_baseline(baseline, **params)
+        self._estimate_background()
 
     def _configure(self, modulation_time: float, shift: int):
         n = round(modulation_time / self.sampling_interval)
@@ -170,10 +201,6 @@ class GCxGC_MS:
         )
         self._valid = (self._scan_grid >= 0) & (self._scan_grid < self.n_scans)
         self._estimate_background()
-        tic = self.raw.intensities.sum(axis=1) - self.baseline_of_scans(
-            np.arange(self.n_scans)
-        ).sum(axis=1)
-        self.tic_2d = self.fold(tic)
         t0 = self.scan_times[0]
         dt = self.sampling_interval
         self.rt1 = (t0 + (np.arange(self.n_modulations) * n + self.shift) * dt) / 60.0
@@ -234,40 +261,14 @@ class GCxGC_MS:
 
     # ------------------------------------------------------------ background
     def _estimate_background(self):
-        """Per modulation and ion baseline and noise estimates."""
-        n = self.n_rt2
-        data = self.raw.intensities
-        n_mod = self.n_modulations
-        base = np.zeros((n_mod, data.shape[1]), dtype=np.float32)
-        noise = np.zeros_like(base)
-        for i in range(n_mod):
-            lo = max(i * n + self.shift, 0)
-            hi = min((i + 1) * n + self.shift, self.n_scans)
-            if hi - lo < 3:
-                if i:
-                    base[i], noise[i] = base[i - 1], noise[i - 1]
-                continue
-            block = data[lo:hi]
-            b = np.percentile(block, self.baseline_percentile, axis=0)
-            med = np.median(block, axis=0)
-            mad = np.median(np.abs(block - med), axis=0)
-            base[i] = b
-            noise[i] = 1.4826 * mad
-        # avoid zero noise for channels that are always 0
-        floor = np.maximum(
-            np.median(noise[noise > 0]) * 0.1 if np.any(noise > 0) else 1.0, 1.0
-        )
-        self.baseline = base
-        self.noise = np.maximum(noise, floor)
-
-    def _mod_of_scans(self, scans: np.ndarray) -> np.ndarray:
-        return np.clip(
-            (np.asarray(scans) - self.shift) // self.n_rt2, 0, self.n_modulations - 1
-        )
+        """Fit the baseline model and compute the corrected TIC."""
+        self.baseline.fit(self)
+        tic = self.raw.intensities.sum(axis=1) - self.baseline.summed_baseline()
+        self.tic_2d = self.fold(tic)
 
     def baseline_of_scans(self, scans: np.ndarray) -> np.ndarray:
         """Baseline spectra (``(len(scans), n_mz)``) of the given scans."""
-        return self.baseline[self._mod_of_scans(scans)]
+        return self.baseline.baseline_of_scans(scans)
 
     # ------------------------------------------------------------ spectra
     def spectrum(
@@ -276,6 +277,7 @@ class GCxGC_MS:
         n_average: int = 1,
         subtract_background: bool = True,
         snr: float = 3.0,
+        baseline: BaselineModel | None = None,
     ) -> Spectrum:
         """
         Mass spectrum of a scan.
@@ -287,10 +289,15 @@ class GCxGC_MS:
         n_average : int, default 1
             Number of scans (centred on ``scan``) that are summed.
         subtract_background : bool, default True
-            Subtract the per-ion baseline of the modulation and remove channels
-            that are not significantly above the noise.
+            Subtract the baseline and remove channels that are not
+            significantly above the noise.
         snr : float, default 3
-            Signal to noise threshold used when ``subtract_background`` is set.
+            Signal to noise threshold used when ``subtract_background`` is set
+            (``0`` keeps all channels). Only the percentile baseline models
+            estimate a noise level; the others never zero channels.
+        baseline : BaselineModel, optional
+            A fitted model to use instead of :attr:`baseline` (e.g.
+            ``chrom.baseline.image_model``).
 
         Returns
         -------
@@ -302,10 +309,12 @@ class GCxGC_MS:
         scans = np.arange(lo, hi)
         summed = self.raw.intensities[scans].astype(np.float64).sum(axis=0)
         if subtract_background:
-            summed -= self.baseline_of_scans(scans).sum(axis=0)
-            mods = self._mod_of_scans(scans)
-            threshold = snr * self.noise[mods].mean(axis=0) * np.sqrt(len(scans))
-            summed[summed < threshold] = 0.0
+            model = self.baseline if baseline is None else baseline
+            summed -= model.spectrum_baseline(self, scans)
+            noise = model.noise_of_scans(scans)
+            if noise is not None and snr > 0:
+                threshold = snr * noise.mean(axis=0) * np.sqrt(len(scans))
+                summed[summed < threshold] = 0.0
         summed = np.clip(summed, 0, None)
         rt1, rt2 = self.retention_times(scan)
         return Spectrum(self.mz.copy(), summed, rt1, rt2, scan)
@@ -354,9 +363,7 @@ class GCxGC_MS:
             return np.zeros_like(self.tic_2d)
         signal = self.raw.intensities[:, cols].astype(np.float64).sum(axis=1)
         if subtract_background:
-            signal -= self.baseline_of_scans(np.arange(self.n_scans))[:, cols].sum(
-                axis=1
-            )
+            signal -= self.baseline.summed_baseline(cols)
         return self.fold(signal)
 
 
@@ -366,6 +373,7 @@ def read_gcxgc_ms(
     shift: int = 0,
     baseline_percentile: float = 25.0,
     name: str | None = None,
+    baseline: BaselineModel | str | dict | None = None,
 ) -> GCxGC_MS:
     """
     Read a GCxGC-MS data file.
@@ -382,6 +390,8 @@ def read_gcxgc_ms(
         Percentile used for the per-ion baseline.
     name : str, optional
         Name of the chromatogram, defaults to the file name.
+    baseline : BaselineModel, str or dict, optional
+        Baseline model (see :mod:`pyGCxGC.ms.baseline`).
 
     Returns
     -------
@@ -400,6 +410,7 @@ def read_gcxgc_ms(
         shift=shift,
         baseline_percentile=baseline_percentile,
         name=name or Path(path).name,
+        baseline=baseline,
     )
 
 

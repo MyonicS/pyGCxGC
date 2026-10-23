@@ -42,6 +42,9 @@ from .processing import (
 from . import ms
 from .ms import GCxGC_MS, read_gcxgc_ms, load_library, search_spectrum
 
+from . import masks
+from .masks import Grid, Mask, MaskSet
+
 # Import GUI functions only if tkinter is available
 try:
     from .mask_gui import launch_mask_creator # type: ignore
@@ -87,6 +90,11 @@ __all__ = [
     "read_gcxgc_ms",
     "load_library",
     "search_spectrum",
+    # Masks
+    "masks",
+    "Grid",
+    "Mask",
+    "MaskSet",
     # GUI functions
     "launch_mask_creator",
     "launch_ms_viewer",

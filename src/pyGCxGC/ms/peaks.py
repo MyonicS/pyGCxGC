@@ -146,9 +146,11 @@ def identify_peaks(
         params.mz_min = lo
     if params.mz_max is None:
         params.mz_max = hi
+    # spectra-only baseline models (local, reference) do not apply to peaks
+    model = data.baseline.image_model
     spectra = []
     for scan in peaks["scan"]:
-        s = data.spectrum(int(scan), n_average=n_average)
+        s = data.spectrum(int(scan), n_average=n_average, baseline=model)
         spectra.append((s.mz, s.intensity))
     results = search_spectra(spectra, library, params, progress=progress)
     table = peaks.copy()

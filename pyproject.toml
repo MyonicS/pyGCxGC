@@ -33,7 +33,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4.0", "pytest-cov>=3.0.0", "ruff>=0.0.285"]
+dev = ["pytest>=7.4.0", "pytest-cov>=3.0.0", "ruff>=0.0.285", "httpx>=0.27"]
+app = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "websockets>=12",
+    "pydantic>=2",
+    "platformdirs>=4",
+    "rdkit>=2024.3",
+]
 docs = [
     "mkdocs-material>=9.4.0",
     "mkdocstrings[python]>=0.22.0",
@@ -68,7 +76,7 @@ minversion = "6.0"
 addopts = ["-p no:warnings", "--import-mode=importlib"]
 xfail_strict = true
 log_cli_level = "warn"
-pythonpath = "src"
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 
 [tool.black]

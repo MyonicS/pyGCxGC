@@ -7,10 +7,12 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from synthetic import SPECTRA
+from synthetic import lib_from_dict as _lib_from_dict
+from synthetic import synthetic_run as _synthetic_run
 
 from pyGCxGC.ms import (
     GCxGC_MS,
-    RawMSData,
     SearchParameters,
     SpectralLibrary,
     composite_scores,
@@ -23,35 +25,6 @@ from pyGCxGC.ms.nist import NAME_TOKENS, format_cas, read_nist_mainlib
 from pyGCxGC.ms.peaks import detect_peaks, identify_peaks
 
 LOCAL_NIST = Path(__file__).parents[1] / "local_data" / "MSSEARCH" / "MAINLIB"
-
-SPECTRA = {
-    "Toluene": ({91: 999, 92: 776, 65: 121, 63: 74, 51: 64, 50: 41}, "C7H8", 92),
-    "Naphthalene": (
-        {128: 999, 127: 130, 129: 110, 102: 80, 64: 50, 51: 60},
-        "C10H8",
-        128,
-    ),
-    "Decane": (
-        {57: 999, 43: 900, 71: 520, 85: 330, 99: 80, 113: 40, 142: 60},
-        "C10H22",
-        142,
-    ),
-    "Heavy": ({57: 100, 300: 500, 301: 300, 820: 999}, "C60H100", 820),
-}
-
-
-def _lib_from_dict(spectra=SPECTRA) -> SpectralLibrary:
-    names = list(spectra)
-    pairs = [
-        (np.array(list(p)), np.array(list(p.values()), float))
-        for p, _, _ in spectra.values()
-    ]
-    metadata = {
-        "name": names,
-        "formula": [v[1] for v in spectra.values()],
-        "mw": [v[2] for v in spectra.values()],
-    }
-    return SpectralLibrary.from_spectra(pairs, name="test", metadata=metadata)
 
 
 # ------------------------------------------------------------------ NIST
@@ -219,38 +192,6 @@ def test_search_respects_mass_range():
 
 
 # ------------------------------------------------------------------ data
-def _synthetic_run(modulation=4.0, dt=0.05, n_mod=40, seed=0):
-    """GCxGC-MS run with three compounds and a per-ion baseline."""
-    rng = np.random.default_rng(seed)
-    n_per = round(modulation / dt)
-    n_scans = n_per * n_mod
-    mz = np.arange(45, 201)
-    data = 50.0 + 5.0 * rng.standard_normal((n_scans, len(mz)))
-    data += np.linspace(0, 30, len(mz))[None, :]  # ion dependent background
-    truth = []
-    for name, rt1_mod, rt2 in (
-        ("Toluene", 10, 1.0),
-        ("Naphthalene", 25, 2.5),
-        ("Decane", 18, 1.6),
-    ):
-        peaks = SPECTRA[name][0]
-        spec = np.zeros(len(mz))
-        for m, v in peaks.items():
-            if 45 <= m <= 200:
-                spec[m - 45] = v
-        for mod in range(rt1_mod - 2, rt1_mod + 3):
-            amp = 4e3 * np.exp(-0.5 * ((mod - rt1_mod) / 1.0) ** 2)
-            centre = mod * n_per + rt2 / dt
-            idx = np.arange(mod * n_per, (mod + 1) * n_per)
-            profile = amp * np.exp(-0.5 * ((idx - centre) / 2.0) ** 2)
-            data[idx] += profile[:, None] * spec[None, :] / 999
-        truth.append((name, rt1_mod, rt2))
-    raw = RawMSData(
-        np.arange(n_scans) * dt, mz, data.astype(np.float32), {"source": "synthetic"}
-    )
-    return raw, truth
-
-
 def test_fold_and_spectrum():
     raw, truth = _synthetic_run()
     chrom = GCxGC_MS(raw, modulation_time=4.0)
@@ -344,3 +285,199 @@ def test_local_nist_library():
     entry = lib[idx[0]]
     assert entry.intensity.max() == 999
     assert entry.mz[np.argmax(entry.intensity)] == 91
+
+
+# ------------------------------------------------------------------ baseline
+def _old_background(raw, n, shift, percentile=25.0):
+    """The per-modulation background of pyGCxGC <= 0.0.1 (reference)."""
+    data = raw.intensities
+    n_scans = data.shape[0]
+    n_mod = int(np.ceil((n_scans - shift) / n))
+    base = np.zeros((n_mod, data.shape[1]), dtype=np.float32)
+    noise = np.zeros_like(base)
+    for i in range(n_mod):
+        lo, hi = max(i * n + shift, 0), min((i + 1) * n + shift, n_scans)
+        if hi - lo < 3:
+            if i:
+                base[i], noise[i] = base[i - 1], noise[i - 1]
+            continue
+        block = data[lo:hi]
+        base[i] = np.percentile(block, percentile, axis=0)
+        med = np.median(block, axis=0)
+        noise[i] = 1.4826 * np.median(np.abs(block - med), axis=0)
+    floor = np.maximum(np.median(noise[noise > 0]) * 0.1, 1.0)
+    return base, np.maximum(noise, floor)
+
+
+@pytest.mark.parametrize("shift", [0, 5, -3])
+def test_default_baseline_unchanged(shift):
+    raw, _ = _synthetic_run()
+    chrom = GCxGC_MS(raw, modulation_time=4.0, shift=shift)
+    base, noise = _old_background(raw, 80, shift)
+    assert chrom.baseline.mode == "modulation_percentile"
+    np.testing.assert_array_equal(chrom.baseline.levels, base)
+    np.testing.assert_array_equal(chrom.baseline.noise, noise)
+    mods = np.clip((np.arange(chrom.n_scans) - shift) // 80, 0, len(base) - 1)
+    tic = raw.intensities.sum(axis=1) - base[mods].sum(axis=1)
+    np.testing.assert_array_equal(chrom.tic_2d, chrom.fold(tic))
+    scan = 845
+    s = chrom.spectrum(scan, n_average=3)
+    scans = np.arange(scan - 1, scan + 2)
+    expected = raw.intensities[scans].astype(np.float64).sum(axis=0)
+    expected -= base[mods[scans]].sum(axis=0)
+    expected[expected < 3 * noise[mods[scans]].mean(axis=0) * np.sqrt(3)] = 0
+    np.testing.assert_array_equal(s.intensity, np.clip(expected, 0, None))
+
+
+def test_make_baseline():
+    from pyGCxGC.ms.baseline import ModulationPercentile, make_baseline
+
+    assert make_baseline() == ModulationPercentile(25)
+    model = make_baseline("rolling_percentile", window=3)
+    assert model.to_dict() == {
+        "mode": "rolling_percentile",
+        "percentile": 25.0,
+        "window": 3,
+    }
+    assert make_baseline(model.to_dict()) == model
+    assert make_baseline(model) is not model
+    assert model.describe() == "rolling_percentile(percentile=25, window=3)"
+    local = make_baseline({"mode": "local", "gap": 2})
+    assert local.image_model == ModulationPercentile()
+    with pytest.raises(ValueError, match="Unknown baseline"):
+        make_baseline("asymmetric")
+    with pytest.raises(ValueError, match="image_model"):
+        make_baseline("local", image_model="local")
+
+
+def test_no_baseline_keeps_raw_intensities():
+    raw, _ = _synthetic_run()
+    chrom = GCxGC_MS(raw, modulation_time=4.0, baseline="none")
+    np.testing.assert_allclose(chrom.tic_2d, chrom.fold(raw.intensities.sum(axis=1)))
+    s = chrom.spectrum(845, n_average=1)
+    np.testing.assert_allclose(s.intensity, raw.intensities[845])  # no zeroing
+
+
+def test_rolling_baseline_less_disturbed_by_broad_compound():
+    raw, _ = _synthetic_run(seed=1)
+    raw.intensities[20 * 80 : 21 * 80, 128 - 45] += 3000.0  # fills one modulation
+    per_mod = GCxGC_MS(raw, 4.0)
+    rolling = GCxGC_MS(raw, 4.0, baseline={"mode": "rolling_percentile", "window": 2})
+    col = 128 - 45
+    assert per_mod.baseline.levels[20, col] > 2500  # swallowed by the baseline
+    assert rolling.baseline.levels[20, col] < 200
+    assert rolling.eic_2d(128)[:, 20].sum() > 0.9 * 3000 * 80
+
+
+def test_local_and_reference_baselines():
+    raw, truth = _synthetic_run()
+    chrom = GCxGC_MS(raw, 4.0)
+    _, mod, rt2 = truth[0]
+    scan = chrom.find_apex(chrom.scan_at(round(rt2 / 0.05), mod))
+    default = chrom.spectrum(scan, n_average=3)
+    tic = chrom.tic_2d.copy()
+
+    chrom.set_baseline("local", gap=12, width=5)
+    np.testing.assert_array_equal(chrom.tic_2d, tic)  # the image is unchanged
+    model = chrom.baseline
+    background = model.background_scans(chrom, np.arange(scan - 1, scan + 2))
+    assert len(background) == 10
+    assert all(chrom.pixel_of_scan(int(b))[1] == mod for b in background)
+    distance = np.abs(background - scan)
+    assert distance.min() >= 12
+    assert distance.max() < 17
+    local = chrom.spectrum(scan, n_average=3).nonzero()
+    assert local.mz[np.argsort(-local.intensity)[:2]].tolist() == [91, 92]
+    np.testing.assert_allclose(
+        local.intensity.max(), default.intensity.max(), rtol=0.05
+    )
+
+    far = chrom.scan_at(5, 2)  # background only
+    chrom.set_baseline({"mode": "reference", "scan": far, "n_scans": 5})
+    ref = chrom.spectrum(scan, n_average=3).nonzero()
+    assert ref.mz[np.argmax(ref.intensity)] == 91
+    # peak identification ignores spectra-only models
+    peaks = detect_peaks(chrom, snr=20)
+    table, _ = identify_peaks(chrom, peaks, _lib_from_dict())
+    assert set(table["name"]) == {"Toluene", "Naphthalene", "Decane"}
+
+
+def test_snr_zero_disables_channel_zeroing():
+    raw, _ = _synthetic_run()
+    chrom = GCxGC_MS(raw, 4.0)
+    zeroed = chrom.spectrum(845, n_average=3)
+    kept = chrom.spectrum(845, n_average=3, snr=0)
+    assert (kept.intensity > 0).sum() > (zeroed.intensity > 0).sum()
+
+
+# ------------------------------------------------------------------ identifiers
+MONA_RECORD = """Name: Toluene
+DB#: XX000001
+InChIKey: YXFVVABEGXRONW-UHFFFAOYSA-N
+Spectrum_type: MS1
+Instrument_type: EI-B
+Formula: C7H8
+MW: 92
+Comments: "SMILES=Cc1ccccc1" "cas=108-88-3" "pubchem cid=1140" "InChI=InChI=1S/C7H8/c1-7-5-3-2-4-6-7/h2-6H,1H3" "computed SMILES=CC1=CC=CC=C1" "license=CC BY"
+Num Peaks: 3
+91 999
+92 776
+65 121
+
+Name: Unknown thing
+Num Peaks: 1
+50 10
+"""
+
+
+def test_msp_structure_identifiers(tmp_path):
+    path = tmp_path / "mona.msp"
+    path.write_text(MONA_RECORD)
+    lib = SpectralLibrary.from_msp(path)
+    e = lib[0]
+    assert e.smiles == "Cc1ccccc1"
+    assert e.inchi == "InChI=1S/C7H8/c1-7-5-3-2-4-6-7/h2-6H,1H3"
+    assert e.inchikey == "YXFVVABEGXRONW-UHFFFAOYSA-N"
+    assert e.pubchem_cid == 1140
+    assert e.cas == "108-88-3"
+    assert (lib[1].smiles, lib[1].inchikey, lib[1].pubchem_cid) == ("", "", 0)
+    # MSP and npz round trips keep the identifiers
+    lib.to_msp(tmp_path / "out.msp")
+    back = SpectralLibrary.from_msp(tmp_path / "out.msp")[0]
+    assert (back.smiles, back.inchi, back.inchikey, back.pubchem_cid) == (
+        e.smiles,
+        e.inchi,
+        e.inchikey,
+        e.pubchem_cid,
+    )
+    lib.save(tmp_path / "lib.npz")
+    cached = SpectralLibrary.load(tmp_path / "lib.npz")[0]
+    assert (cached.smiles, cached.inchikey, cached.pubchem_cid) == (
+        e.smiles,
+        e.inchikey,
+        e.pubchem_cid,
+    )
+
+
+def test_old_npz_cache_still_loads(tmp_path):
+    from pyGCxGC.ms import library as libmod
+
+    lib = _lib_from_dict()
+    path = lib.save(tmp_path / "v1.npz")
+    with np.load(path) as z:
+        arrays = {
+            k: z[k] for k in z.files if not k.startswith(("smiles", "inchi", "pubchem"))
+        }
+    arrays["version"] = np.array([1])
+    np.savez(path, **arrays)
+    old = SpectralLibrary.load(path)
+    assert old.compound_name.tolist() == lib.compound_name.tolist()
+    assert old[0].smiles == ""
+    assert old[0].pubchem_cid == 0
+    # converted caches are keyed by the cache version, so old ones rebuild
+    msp = tmp_path / "lib.msp"
+    lib.to_msp(msp)
+    assert libmod.CACHE_VERSION == 2
+    cache = libmod.library_cache_file(msp, tmp_path / "cache")
+    load_library(msp, cache_dir=tmp_path / "cache")
+    assert cache.exists()

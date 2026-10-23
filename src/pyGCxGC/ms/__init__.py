@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .baseline import BASELINES, BaselineModel, make_baseline
 from .data import GCxGC_MS, Spectrum, estimate_modulation_time, read_gcxgc_ms
 from .io import RawMSData, read_andi, read_jcamp, read_ms_file, read_openchrom_csv
 from .library import SpectralLibrary, download_mona_gcms, load_library
@@ -14,6 +15,8 @@ from .search import (
 )
 
 __all__ = [
+    "BASELINES",
+    "BaselineModel",
     "GCxGC_MS",
     "Hit",
     "RawMSData",
@@ -24,6 +27,7 @@ __all__ = [
     "download_mona_gcms",
     "estimate_modulation_time",
     "load_library",
+    "make_baseline",
     "read_andi",
     "read_gcxgc_ms",
     "read_jcamp",

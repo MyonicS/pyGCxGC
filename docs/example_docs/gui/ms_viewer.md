@@ -68,6 +68,10 @@ Vendor binary files such as Shimadzu `.qgd` cannot be read directly.
 Converted libraries are cached in `~/.cache/pyGCxGC`. The first load of NIST 20
 takes about 10 s, and later loads take a fraction of a second.
 
+Structure identifiers in MSP files (`InChIKey:` lines and the `SMILES=`,
+`InChI=`, `cas=` and `pubchem cid=` entries of MoNA-style `Comments:`) are kept
+as `smiles`, `inchi`, `inchikey` and `pubchem_cid` of every library entry.
+
 ## Match factors
 
 Spectra are compared with the composite match factor of Stein & Scott (1994),
@@ -107,3 +111,31 @@ table.to_csv("peaks.csv", index=False)
 
 `chrom.chrom_2D` holds the TIC in the same layout as `GCxGC_FID.chrom_2D`, so
 masks and `integrate_masks` work for GCxGC-MS data too.
+
+## Background correction
+
+GC-MS data contain a per-ion background (column bleed, air, detector offset)
+that drifts over the run. `GCxGC_MS` subtracts it with a baseline model, set
+with `baseline=` or changed later with `set_baseline`:
+
+| Mode | Applies to | Parameters | Notes |
+| --- | --- | --- | --- |
+| `none` | image, spectra, peaks | – | Raw intensities, no channel zeroing |
+| `modulation_percentile` (default) | image, spectra, peaks | `percentile` (25) | Per ion, a low percentile within each modulation |
+| `rolling_percentile` | image, spectra, peaks | `percentile` (25), `window` (2) | Percentile over the modulation and `window` neighbours on each side; a broad compound that fills one modulation disturbs it less |
+| `local` | spectra | `gap` (3), `width` (5) | Mean of the scans `gap` to `gap + width` scans on both sides of the point, in the same modulation |
+| `reference` | spectra | `scan`, `n_scans` (3) | Mean spectrum around a background point you pick |
+
+```python
+chrom = gcgc.read_gcxgc_ms(
+    "run.cdf", modulation_time=20, baseline={"mode": "rolling_percentile", "window": 2}
+)
+chrom.set_baseline("local", gap=3, width=5)
+spectrum = chrom.spectrum(12345, n_average=3)  # local background subtracted
+print(chrom.baseline.describe())
+```
+
+The spectra-only models use `image_model` (default `modulation_percentile`)
+for the image, the EICs and the spectra of peak identification. With the
+percentile models, channels below `snr` times the noise (scaled MAD) are set to
+zero; `chrom.spectrum(scan, snr=0)` keeps all channels.

@@ -14,7 +14,7 @@ from matplotlib.backends._backend_tk import NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import matplotlib.patches as patches
 from matplotlib.widgets import RectangleSelector, LassoSelector, PolygonSelector
-from matplotlib.path import Path
+from matplotlib.path import Path as MplPath
 import tifffile
 import traceback
 import platform
@@ -866,7 +866,7 @@ class MaskCreatorGUI:
                         vertices = self.selected_points["vertices"]
 
                         # Create a Path from the vertices
-                        path = Path(vertices)
+                        path = MplPath(vertices)
 
                         # Create a grid of points
                         y, x = np.mgrid[: self.mask.shape[0], : self.mask.shape[1]]

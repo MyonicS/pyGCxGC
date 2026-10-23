@@ -7,11 +7,16 @@ a head-to-tail comparison with the selected library hit plus the hit list.
 
 Launch with ``pygcxgc-msviewer [data.cdf] [--library MAINLIB|file.msp]`` or
 ``pyGCxGC.launch_ms_viewer()``.
+
+All data handling (loading, folding, libraries, spectra, search, peaks and
+export) goes through a :class:`pyGCxGC.app.session.Session`, the same layer
+the new app uses; this module only draws.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import queue
@@ -26,11 +31,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.colors import LogNorm, PowerNorm
 from matplotlib.figure import Figure
 
-from pyGCxGC.ms.data import GCxGC_MS, estimate_modulation_time
-from pyGCxGC.ms.io import read_ms_file
-from pyGCxGC.ms.library import download_mona_gcms, load_library
-from pyGCxGC.ms.peaks import detect_peaks, identify_peaks
-from pyGCxGC.ms.search import SearchParameters, search_spectrum
+from pyGCxGC.app.session import MSDocument, Session, SessionError
 
 SETTINGS_FILE = (
     Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
@@ -52,16 +53,21 @@ PEAK_COLUMNS = (
 class MSViewer:
     """Tkinter application for browsing GCxGC-MS data and matching spectra."""
 
-    def __init__(self, root: tk.Tk, data_path=None, library_path=None, modulation=None):
+    def __init__(
+        self,
+        root: tk.Tk,
+        data_path=None,
+        library_path=None,
+        modulation=None,
+        session: Session | None = None,
+    ):
         self.root = root
         self.root.title("pyGCxGC - GCxGC-MS viewer")
         self.root.geometry("1500x900")
-        self.data: GCxGC_MS | None = None
-        self.library = None
-        self.spectrum = None
-        self.hits = []
+        self.session = session or Session()
+        self.doc_id: str | None = None
         self.marker = None
-        self.peaks = None
+        self.peaks = None  # display copy of the session's peak table (sortable)
         self.peak_artist = None
         self.jobs: queue.Queue = queue.Queue()
         self.settings = self._load_settings()
@@ -250,6 +256,42 @@ class MSViewer:
         for c in (self.canvas_chrom, self.canvas_spec, self.canvas_match):
             c.draw_idle()
 
+    # ---------------------------------------------------------------- state
+    @property
+    def document(self) -> MSDocument | None:
+        """The open document of the session (or ``None``)."""
+        if self.doc_id is None or self.doc_id not in self.session.documents:
+            return None
+        return self.session.documents[self.doc_id]  # type: ignore[return-value]
+
+    @property
+    def data(self):
+        """The :class:`~pyGCxGC.GCxGC_MS` being shown (or ``None``)."""
+        doc = self.document
+        return doc.data if doc is not None else None
+
+    @property
+    def library(self):
+        """First active, loaded library (or ``None``)."""
+        records = self.session.active_libraries()
+        return records[0].library if records else None
+
+    @property
+    def selection(self):
+        doc = self.document
+        return doc.selection if doc is not None else None
+
+    @property
+    def spectrum(self):
+        """Background corrected spectrum of the selected point."""
+        sel = self.selection
+        return sel.spectrum.corrected if sel is not None else None
+
+    @property
+    def hits(self):
+        sel = self.selection
+        return (sel.hits or []) if sel is not None else []
+
     # ---------------------------------------------------------------- jobs
     def _run(self, label, func, done):
         """Run ``func`` in a worker thread and call ``done(result)`` in Tk."""
@@ -263,6 +305,29 @@ class MSViewer:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _run_job(self, job, done, label: str | None = None):
+        """Call ``done(result)`` in Tk once a session job has finished."""
+        self.var_status.set((label or job.label) + " …")
+
+        def finished(j):
+            if j.status == "done":
+                self.jobs.put((done, j.result, None))
+            elif j.status == "cancelled":
+                self.jobs.put((None, None, None))
+            else:
+                self.jobs.put((done, None, (j.error, j.traceback or "")))
+
+        job.add_done_callback(finished)
+
+    def _call(self, func, *args, **kwargs):
+        """Call a session method; show request errors instead of raising."""
+        try:
+            return func(*args, **kwargs)
+        except SessionError as exc:
+            self.var_status.set(f"Error: {exc}")
+            messagebox.showerror("pyGCxGC", str(exc))
+            return None
+
     def _poll_jobs(self):
         try:
             while True:
@@ -270,6 +335,8 @@ class MSViewer:
                 if error:
                     self.var_status.set(f"Error: {error[0]}")
                     messagebox.showerror("pyGCxGC", f"{error[0]}\n\n{error[1][-1500:]}")
+                elif done is None:
+                    self.var_status.set("Cancelled.")
                 else:
                     done(result)
         except queue.Empty:
@@ -292,17 +359,19 @@ class MSViewer:
 
     def load_data(self, path):
         path = str(Path(path).resolve())
+        params = {"shift": self._shift()}
+        with contextlib.suppress(ValueError):  # otherwise estimated from the data
+            params["modulation_time"] = float(self.var_mod.get())
+        job = self._call(self.session.open_document, path, "ms", params)
+        if job is None:
+            return
 
-        def work():
-            raw = read_ms_file(path)
-            try:
-                mod = float(self.var_mod.get())
-            except ValueError:
-                mod = estimate_modulation_time(raw)
-            return GCxGC_MS(raw, mod, shift=self._shift(), name=Path(path).name)
-
-        def done(data):
-            self.data = data
+        def done(result):
+            if self.doc_id is not None and self.doc_id in self.session.documents:
+                self.session.close_document(self.doc_id)
+            self.doc_id = result["document_id"]
+            self.peaks = None
+            data = self.data
             self.var_mod.set(f"{data.modulation_time:g}")
             self.settings.update(data=path, modulation=data.modulation_time)
             self._save_settings()
@@ -313,7 +382,7 @@ class MSViewer:
                 f"{data.modulation_time:g} s. Click a peak to see its spectrum."
             )
 
-        self._run(f"Loading {Path(path).name}", work, done)
+        self._run_job(job, done)
 
     def _shift(self) -> int:
         try:
@@ -325,25 +394,63 @@ class MSViewer:
         if self.data is None:
             return
         try:
-            self.data.set_modulation(float(self.var_mod.get()), self._shift())
+            params = {
+                "modulation_time": float(self.var_mod.get()),
+                "shift": self._shift(),
+            }
         except ValueError as exc:
             messagebox.showerror("pyGCxGC", str(exc))
             return
-        self.settings["modulation"] = self.data.modulation_time
-        self._save_settings()
-        self.draw_chromatogram()
-
-    def draw_chromatogram(self):
-        if self.data is None:
+        job = self._call(self.session.update_document, self.doc_id, params)
+        if job is None:
             return
-        d = self.data
-        eic = [
+
+        def done(_result):
+            d = self.data
+            self.settings["modulation"] = d.modulation_time
+            self._save_settings()
+            self.var_status.set(
+                f"Refolded: {d.n_modulations} modulations of {d.modulation_time:g} s, "
+                f"shift {d.shift} scans."
+            )
+            self.draw_chromatogram()
+            if self.selection is not None:
+                self._show_selection()
+
+        self._run_job(job, done)
+
+    def _eic_mz(self) -> list[int]:
+        return [
             int(x)
             for x in self.var_eic.get().replace(",", " ").split()
             if x.strip().isdigit()
         ]
-        img = d.eic_2d(eic) if eic else d.tic_2d
-        img = np.clip(img, 0, None)
+
+    def draw_chromatogram(self):
+        """Draw the TIC or the EIC typed in the toolbar (computed as a job)."""
+        doc = self.document
+        if doc is None:
+            return
+        eic = self._eic_mz()
+        signal = "eic" if eic else "tic"
+        if (doc.signal, doc.mz) != (signal, sorted(set(eic))):
+            job = self._call(self.session.set_signal, self.doc_id, signal, eic)
+            if job is not None:
+                self._run_job(job, lambda _r: self._signal_ready(job.label))
+            return
+        self._draw_image()
+
+    def _signal_ready(self, label: str):
+        self.var_status.set(f"Showing {label}.")
+        self._draw_image()
+
+    def _draw_image(self):
+        d = self.data
+        if d is None:
+            return
+        image = self.session.image(self.doc_id)
+        eic = image.mz if image.signal == "eic" else []
+        img = np.clip(image.data, 0, None)
         positive = img[img > 0]
         vmax = float(np.percentile(positive, 99.9)) if positive.size else 1.0
         scale = self.var_scale.get()
@@ -389,25 +496,30 @@ class MSViewer:
             snr = float(self.var_snr.get())
         except ValueError:
             snr = 10.0
-        data, lib = self.data, self.library
+        identify = self.library is not None
         n_avg = max(int(self.var_avg.get()), 1)
+        job = self._call(
+            self.session.detect_peaks,
+            self.doc_id,
+            snr,
+            identify=identify,
+            n_average=n_avg,
+        )
+        if job is None:
+            return
 
-        def work():
-            peaks = detect_peaks(data, snr=snr)
-            if lib is not None and len(peaks):
-                peaks, _ = identify_peaks(data, peaks, lib, n_average=n_avg)
-            return peaks
-
-        def done(peaks):
-            self.peaks = peaks
+        def done(_result):
+            self.peaks, _info = self.session.peaks(self.doc_id)
             self._fill_peak_table()
             self.draw_peak_markers()
             self.tabs.select(1)
-            ided = "" if lib is None else " and identified"
-            self.var_status.set(f"{len(peaks)} peaks found{ided} (S/N >= {snr:g}).")
+            ided = " and identified" if identify else ""
+            self.var_status.set(
+                f"{len(self.peaks)} peaks found{ided} (S/N >= {snr:g})."
+            )
 
-        what = "Detecting peaks" + ("" if lib is None else " and searching the library")
-        self._run(what, work, done)
+        what = "Detecting peaks" + (" and searching the library" if identify else "")
+        self._run_job(job, done, what)
 
     def _fill_peak_table(self):
         self.peak_tree.delete(*self.peak_tree.get_children())
@@ -470,8 +582,7 @@ class MSViewer:
         path = filedialog.asksaveasfilename(
             defaultextension=".csv", initialfile=default, filetypes=[("CSV", "*.csv")]
         )
-        if path:
-            self.peaks.sort_values("peak_id").to_csv(path, index=False)
+        if path and self._call(self.session.export, self.doc_id, "peaks", "csv", path):
             self.var_status.set(f"Peak table written to {path}")
 
     # ---------------------------------------------------------------- library
@@ -500,11 +611,7 @@ class MSViewer:
                     ],
                 )
             else:
-                self._run(
-                    "Downloading MoNA GC-MS library",
-                    download_mona_gcms,
-                    self.load_library,
-                )
+                self.load_library("mona")
                 return
             if path:
                 self.load_library(path)
@@ -519,23 +626,33 @@ class MSViewer:
             )
 
     def load_library(self, path):
-        path = str(Path(path).resolve())
+        """Load a library (``"mona"`` downloads MoNA) and make it the only active one."""
+        if str(path).lower() != "mona":
+            path = str(Path(path).resolve())
+        job = self._call(self.session.add_library, path, activate=True, exclusive=True)
+        if job is None:
+            return
 
-        def done(lib):
-            self.library = lib
-            self.settings["library"] = path
+        def done(result):
+            rec = self.session.library(result["library_id"])
+            self.settings["library"] = rec.path
             self._save_settings()
-            self.var_status.set(f"Library {lib.name}: {len(lib):,} spectra loaded.")
+            self.var_status.set(
+                f"Library {rec.name}: {len(rec.library):,} spectra loaded."
+            )
             if self.spectrum is not None:
                 self.search_current()
-            if self.peaks is not None and "name" not in self.peaks:
+            if self.peaks is not None and (self.peaks["name"] == "").all():
                 self.find_peaks()
 
-        self._run(
-            f"Loading library {Path(path).name} (first time conversion can take ~10 s)",
-            lambda: load_library(path),
-            done,
+        label = (
+            "Downloading the MoNA GC-MS library"
+            if path == "mona"
+            else (
+                f"Loading library {Path(path).name} (first time conversion can take ~10 s)"
+            )
         )
+        self._run_job(job, done, label)
 
     # ---------------------------------------------------------------- selection
     def on_click(self, event):
@@ -545,16 +662,28 @@ class MSViewer:
             return
         d = self.data
         j, i = d.pixel_at(event.xdata, event.ydata)
-        scan = d.scan_at(j, i)
-        if scan < 0:
+        if d.scan_at(j, i) < 0:
             return
-        if self.var_snap.get():
-            scan = d.find_apex(scan)
-        self.select_scan(scan)
+        point = {"rt2_index": j, "mod_index": i, "snap": bool(self.var_snap.get())}
+        if self._call(
+            self.session.select, self.doc_id, n_average=self._n_avg(), **point
+        ):
+            self._show_selection()
+            self.search_current()
+
+    def _n_avg(self) -> int:
+        return max(int(self.var_avg.get()), 1)
 
     def select_scan(self, scan: int):
+        """Select a scan, show its spectrum and search it."""
+        if self._call(
+            self.session.select, self.doc_id, scan=scan, n_average=self._n_avg()
+        ):
+            self._show_selection()
+            self.search_current()
+
+    def _show_selection(self):
         d = self.data
-        self.spectrum = d.spectrum(scan, n_average=max(int(self.var_avg.get()), 1))
         rt1, rt2 = self.spectrum.rt1, self.spectrum.rt2
         if self.marker is not None:
             self.marker.remove()
@@ -568,7 +697,6 @@ class MSViewer:
         )
         self.canvas_chrom.draw_idle()
         self.draw_spectrum()
-        self.search_current()
 
     def draw_spectrum(self):
         s = self.spectrum.nonzero()
@@ -599,14 +727,17 @@ class MSViewer:
             if self.library is None:
                 self.var_status.set("Load a spectral library to match spectra.")
             return
-        spec, lib = self.spectrum, self.library
-        lo, hi = self.data.mass_range
-        params = SearchParameters(mz_min=lo, mz_max=hi, n_hits=20)
+        selection = self.selection
 
-        def done(hits):
-            if spec is not self.spectrum:
+        def search():
+            if selection is not self.selection:
+                return None  # a newer point was selected meanwhile
+            return self.session.search(self.doc_id, n_hits=20)
+
+        def done(searched):
+            if searched is None or searched is not self.selection:
                 return  # a newer point was selected meanwhile
-            self.hits = hits
+            hits = searched.hits
             self.tree.delete(*self.tree.get_children())
             for h in hits:
                 d = h.as_dict()
@@ -623,11 +754,7 @@ class MSViewer:
                 self.var_status.set("No library hits (empty spectrum?)")
                 self.draw_match(None)
 
-        self._run(
-            "Searching library",
-            lambda: search_spectrum(spec.mz, spec.intensity, lib, params),
-            done,
-        )
+        self._run("Searching library", search, done)
 
     def on_hit_selected(self, _event=None):
         sel = self.tree.selection()
@@ -651,7 +778,7 @@ class MSViewer:
                 label="Unknown",
             )
         if hit is not None:
-            e = self.library.entry(hit.index)
+            e = self.session.library_entry(hit.extra["library_id"], hit.index)
             lo, hi = self.data.mass_range
             keep = (e.mz >= lo) & (e.mz <= hi)
             mz, it = e.mz[keep], e.intensity[keep]
@@ -718,8 +845,11 @@ def launch_ms_viewer(data_path=None, library_path=None, modulation=None):
         Modulation time in seconds (estimated from the data if omitted).
     """
     root = tk.Tk()
-    MSViewer(root, data_path, library_path, modulation)
-    root.mainloop()
+    viewer = MSViewer(root, data_path, library_path, modulation)
+    try:
+        root.mainloop()
+    finally:
+        viewer.session.close()
 
 
 def main(argv=None):

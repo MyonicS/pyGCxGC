@@ -7,11 +7,14 @@ masks/integration and GCxGC-MS with spectral library search.
 ## Setup and commands
 
 ```bash
-uv sync --extra dev            # creates .venv (Python >= 3.10)
-uv pip install -e .            # needed for the console scripts
+uv sync --extra dev --extra app   # creates .venv (Python >= 3.10)
+uv pip install -e .               # needed for the console scripts
 .venv/bin/python -m pytest tests -q
-.venv/bin/ruff check src/pyGCxGC/ms src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py
+.venv/bin/ruff check src/pyGCxGC/ms src/pyGCxGC/app src/pyGCxGC/masks.py \
+    src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py tests/test_masks.py \
+    tests/test_app.py tests/synthetic.py
 .venv/bin/ruff format <files you touched>
+.venv/bin/python -m pyGCxGC.app [file] [-l LIBRARY]   # app server: prints READY <port> and the URL with the token
 ```
 
 The older modules (`main.py`, `parsing.py`, `processing.py`, `gui/mask_creator.py`)
@@ -24,14 +27,20 @@ files you change, and do not reformat untouched legacy code.
 | --- | --- |
 | `src/pyGCxGC/main.py`, `parsing.py`, `processing.py` | FID workflow: `parse_2D_chromatogram` -> `GCxGC_FID`, masks, integration |
 | `src/pyGCxGC/gui/mask_creator.py` | Tk mask creator (`pygcxgc-maskcreator`) |
+| `src/pyGCxGC/masks.py` | `MaskSet`/`Mask`/`Grid`: masks as add/subtract shapes in RT units, rasteriser (pixel centres, even-odd), TIFF and `.gcxgc-masks.json` I/O, integration identical to `integrate_masks` |
 | `src/pyGCxGC/ms/io.py` | GC-MS readers -> `RawMSData` (dense scans x nominal m/z float32 matrix) |
-| `src/pyGCxGC/ms/data.py` | `GCxGC_MS`: folding, per-ion baseline/noise, spectra, EIC, apex search, modulation estimate |
+| `src/pyGCxGC/ms/data.py` | `GCxGC_MS`: folding, spectra, EIC, apex search, modulation estimate |
+| `src/pyGCxGC/ms/baseline.py` | Baseline models: `none`, `modulation_percentile` (default), `rolling_percentile`, spectra-only `local` and `reference` |
 | `src/pyGCxGC/ms/library.py` | `SpectralLibrary` (CSR-like peaks + metadata), MSP I/O, `.npz` cache, `load_library`, MoNA download |
 | `src/pyGCxGC/ms/nist.py` | Reader for NIST MS Search `MAINLIB/nist.db` (format documented in the module docstring) |
 | `src/pyGCxGC/ms/search.py` | Composite match factor / reverse match (Stein & Scott), sparse prescreen |
 | `src/pyGCxGC/ms/peaks.py` | 2D peak detection (local maxima + nearest-apex blob volumes) and batch identification |
-| `src/pyGCxGC/gui/ms_viewer.py` | Tk GCxGC-MS viewer (`pygcxgc-msviewer`, `pyGCxGC.launch_ms_viewer`) |
+| `src/pyGCxGC/gui/ms_viewer.py` | Tk GCxGC-MS viewer (`pygcxgc-msviewer`, `pyGCxGC.launch_ms_viewer`); drawing only, all logic goes through a `Session` |
+| `src/pyGCxGC/app/session.py` | `Session`: documents, jobs, events, libraries, selection/search, peaks, masks with undo, export. Core dependencies only |
+| `src/pyGCxGC/app/server.py`, `schemas.py`, `arrays.py` | FastAPI routes and WebSocket, pydantic API models, binary array format (`app` extra) |
 | `tests/test_ms.py` | Synthetic-data tests for everything in `ms/` (no local data needed) |
+| `tests/test_masks.py`, `tests/test_app.py` | `MaskSet`; `Session` and the API (FastAPI `TestClient`) |
+| `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
 | `specs/app.md` | Specification of the new desktop/web app (React frontend on a FastAPI session layer). Read it before working on `frontend/`, `desktop/` or `pyGCxGC.app` |
 | `docs/roadmap.md` | Planned features beyond the app: group-type/region classification, agent skills and MCP server |
@@ -49,9 +58,13 @@ files you change, and do not reformat untouched legacy code.
 * Phase shift (`shift`) is in scans. A modulation starts `shift` scans later,
   and positive values move peaks to lower RT2, the same direction as
   `shift_phase` for FID data.
-* GUI work runs in threads via `MSViewer._run`, and results come back
-  through a queue polled with `after()`. Never touch Tk widgets from a
-  worker thread.
+* GUI work runs in threads via `MSViewer._run` (or session jobs via
+  `MSViewer._run_job`), and results come back through a queue polled with
+  `after()`. Never touch Tk widgets from a worker thread.
+* App state belongs in the `Session` (spec `ARCH-1`); every UI action is a
+  `Session` method. Long work is a job: `session.submit(kind, label, func)`,
+  where `func(job)` calls `job.report(fraction)` (raises `JobCancelled` once
+  cancelled) and returns a small JSON dict such as `{"document_id": ...}`.
 
 ## Data and licensing (important)
 
@@ -94,6 +107,25 @@ files you change, and do not reformat untouched legacy code.
   skips the first modulation.
 * `estimate_modulation_time` uses the TIC autocorrelation, refined with
   harmonics. It must return 20.0 s for the PY_010 and PY_007 runs.
+* **Exact integration.** `MaskSet.integrate` multiplies the `chrom_2D`
+  *DataFrame*, as `integrate_masks` does. Multiplying a NumPy copy changes the
+  memory order, hence the summation order, and the last digit.
+* **Default baseline is frozen.** `modulation_percentile` must stay
+  bit-identical to the original algorithm (`test_default_baseline_unchanged`).
+  `fit` runs the modulations in a thread pool (NumPy releases the GIL while
+  partitioning), which cut PY_010 from 2.2 s to 0.4 s.
+* **Library cache version 2** adds `smiles`, `inchi`, `inchikey` and
+  `pubchem_cid`. Version 1 `.npz` files still load; converted caches are keyed
+  by the version, so NIST is re-converted once (about 10 s).
+* `pyGCxGC.app.session` must not import FastAPI or pydantic, because the Tk
+  viewer uses it without the `app` extra (`test_session_needs_no_web_dependencies`).
+* **API security.** `/api` needs `Authorization: Bearer <token>` (WebSocket:
+  `?token=`) and a `Host` of `127.0.0.1:<port>` or `localhost:<port>`.
+  Starlette's `TestClient` always sends `Host: testserver` for WebSockets, so
+  tests pass `headers={"host": ...}`. uvicorn needs the `websockets` package to
+  serve `/api/events`.
+* The mask creator imported `matplotlib.path.Path` over `pathlib.Path`, which
+  broke loading and saving files; it is now imported as `MplPath`.
 * Smoke-testing the GUI: create `tk.Tk()`, construct `MSViewer(root, data,
   library, 20.0)`, drive it with `root.after(...)` callbacks (e.g.
   `select_scan`, `find_peaks`) and `root.destroy()` when done. A display is

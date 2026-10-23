@@ -26,9 +26,22 @@ from pathlib import Path
 
 import numpy as np
 
-META_FIELDS = ("name", "formula", "cas", "mw", "nist_no", "db_no", "source")
-_INT_FIELDS = ("mw", "nist_no", "db_no")
-CACHE_VERSION = 1
+META_FIELDS = (
+    "name",
+    "formula",
+    "cas",
+    "mw",
+    "nist_no",
+    "db_no",
+    "source",
+    "smiles",
+    "inchi",
+    "inchikey",
+    "pubchem_cid",
+)
+_INT_FIELDS = ("mw", "nist_no", "db_no", "pubchem_cid")
+CACHE_VERSION = 2  # 2: structure identifiers (smiles, inchi, inchikey, pubchem_cid)
+_READABLE_CACHE_VERSIONS = (1, 2)
 
 
 def default_cache_dir() -> Path:
@@ -51,6 +64,10 @@ class LibraryEntry:
     source: str
     mz: np.ndarray
     intensity: np.ndarray
+    smiles: str = ""
+    inchi: str = ""
+    inchikey: str = ""
+    pubchem_cid: int = 0
 
 
 class SpectralLibrary:
@@ -118,6 +135,10 @@ class SpectralLibrary:
             source=str(self.source[index]),
             mz=self.mz[lo:hi].astype(np.int64),
             intensity=self.intensity[lo:hi].astype(np.float64),
+            smiles=str(self.smiles[index]),
+            inchi=str(self.inchi[index]),
+            inchikey=str(self.inchikey[index]),
+            pubchem_cid=int(self.pubchem_cid[index]),
         )
 
     def name_of(self, index: int) -> str:
@@ -206,6 +227,10 @@ class SpectralLibrary:
             meta["nist_no"].append(_safe_int(rec.get("nist_no")))
             meta["db_no"].append(len(spectra))
             meta["source"].append(rec.get("db_id", ""))
+            meta["smiles"].append(rec.get("smiles", ""))
+            meta["inchi"].append(rec.get("inchi", ""))
+            meta["inchikey"].append(rec.get("inchikey", ""))
+            meta["pubchem_cid"].append(_safe_int(rec.get("pubchem_cid")))
         return cls.from_spectra(spectra, name=name or path.stem, metadata=meta)
 
     @classmethod
@@ -274,10 +299,12 @@ class SpectralLibrary:
     def load(cls, path: str | Path) -> SpectralLibrary:
         """Load a library saved with :meth:`save`."""
         with np.load(path, allow_pickle=False) as z:
-            if int(z["version"][0]) != CACHE_VERSION:
+            if int(z["version"][0]) not in _READABLE_CACHE_VERSIONS:
                 raise ValueError(f"Unsupported library cache version in {path}")
             meta = {}
             for field in META_FIELDS:
+                if field not in z and f"{field}_blob" not in z:
+                    continue  # older cache without this field: left empty
                 if field in _INT_FIELDS:
                     meta[field] = z[field]
                 else:
@@ -351,6 +378,12 @@ _MSP_KEYS = {
     "nist#": "nist_no",
     "db#": "db_id",
     "num peaks": "num_peaks",
+    "inchikey": "inchikey",
+    "smiles": "smiles",
+    "inchi": "inchi",
+    "pubchem": "pubchem_cid",
+    "pubchemid": "pubchem_cid",
+    "pubchem_cid": "pubchem_cid",
     "spectrum_type": "spectrum_type",
     "instrument_type": "instrument_type",
     "ion_mode": "ion_mode",
@@ -359,6 +392,15 @@ _MSP_KEYS = {
     "comments": "comments",
     "comment": "comments",
 }
+# "key=value" entries of MSP comments (MoNA, MassBank) -> record fields
+_COMMENT_KEYS = {
+    "cas": "cas",
+    "smiles": "smiles",
+    "inchi": "inchi",
+    "inchikey": "inchikey",
+    "pubchem cid": "pubchem_cid",
+}
+_COMMENT_RE = re.compile(r'"([^"=]+)=([^"]*)"')
 _PEAK_RE = re.compile(
     r"([0-9]+(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?)[\s,:]+([0-9]+(?:\.[0-9]*)?(?:[eE][-+]?[0-9]+)?)"
 )
@@ -407,12 +449,18 @@ def iter_msp(path: str | Path):
                 in_peaks = True
             if k in _MSP_KEYS:
                 rec.setdefault(_MSP_KEYS[k], value.strip())
-            if k == "comments" and "cas=" in value and "cas" not in rec:
-                m = re.search(r'"cas=([0-9-]+)"', value)
-                if m:
-                    rec["cas"] = m.group(1)
+            if k in ("comments", "comment"):
+                _parse_comment_fields(value, rec)
         if in_peaks or peaks:
             yield _finish_msp_record(rec, peaks)
+
+
+def _parse_comment_fields(comment: str, rec: dict) -> None:
+    """Identifiers stored as ``"key=value"`` in an MSP comment (MoNA style)."""
+    for key, value in _COMMENT_RE.findall(comment):
+        field = _COMMENT_KEYS.get(key.strip().lower())
+        if field and value.strip():
+            rec.setdefault(field, value.strip())
 
 
 def _finish_msp_record(rec: dict, peak_lines: list[str]) -> dict:
@@ -447,6 +495,19 @@ def format_msp(entry: LibraryEntry) -> str:
     if entry.nist_no:
         lines.append(f"NIST#: {entry.nist_no}")
     lines.append(f"DB#: {entry.db_no}")
+    if entry.inchikey:
+        lines.append(f"InChIKey: {entry.inchikey}")
+    comments = [
+        f'"{key}={value}"'
+        for key, value in (
+            ("SMILES", entry.smiles),
+            ("InChI", entry.inchi),
+            ("pubchem cid", entry.pubchem_cid or ""),
+        )
+        if value
+    ]
+    if comments:
+        lines.append("Comments: " + " ".join(comments))
     lines.append(f"Num Peaks: {len(entry.mz)}")
     lines.extend(
         f"{int(m)} {round(float(i))}"
@@ -549,12 +610,7 @@ def load_library(path: str | Path, cache_dir: str | Path | None = None, progress
 
     if cache_dir is False:
         return builder()
-    cache_dir = Path(cache_dir) if cache_dir else default_cache_dir()
-    stat = source.stat()
-    digest = hashlib.sha1(
-        f"{source.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|{CACHE_VERSION}".encode()
-    ).hexdigest()[:12]
-    cache_file = cache_dir / f"library_{source.stem}_{digest}.npz"
+    cache_file = library_cache_file(path, cache_dir)
     if cache_file.exists():
         try:
             return SpectralLibrary.load(cache_file)
@@ -564,6 +620,26 @@ def load_library(path: str | Path, cache_dir: str | Path | None = None, progress
     with contextlib.suppress(OSError):
         lib.save(cache_file)
     return lib
+
+
+def library_cache_file(path: str | Path, cache_dir: str | Path | None = None):
+    """
+    Cache file that :func:`load_library` uses for a NIST folder or MSP file.
+
+    Returns ``None`` for ``.npz`` files, which are loaded directly.
+    """
+    from pyGCxGC.ms.nist import find_nist_db, is_nist_library
+
+    path = Path(path)
+    if path.suffix.lower() == ".npz":
+        return None
+    source = find_nist_db(path) if is_nist_library(path) else path
+    cache_dir = Path(cache_dir) if cache_dir else default_cache_dir()
+    stat = source.stat()
+    digest = hashlib.sha1(
+        f"{source.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|{CACHE_VERSION}".encode()
+    ).hexdigest()[:12]
+    return cache_dir / f"library_{source.stem}_{digest}.npz"
 
 
 # ------------------------------------------------------------------ helpers

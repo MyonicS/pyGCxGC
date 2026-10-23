@@ -1,0 +1,61 @@
+"""
+Start the pyGCxGC app server: ``python -m pyGCxGC.app [files] [options]``.
+
+Prints ``READY <port>`` on stdout once the server is listening, followed by
+the URL with the token. The token can be passed with ``--token`` or the
+``PYGCXGC_TOKEN`` environment variable (used by the desktop shell).
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="pyGCxGC app server (local only)")
+    parser.add_argument("files", nargs="*", help="chromatograms to open")
+    parser.add_argument("-l", "--library", help="spectral library to load")
+    parser.add_argument("-m", "--modulation", type=float, help="modulation time (s)")
+    parser.add_argument("--port", type=int, default=0, help="port (default: random)")
+    parser.add_argument("--token", default=os.environ.get("PYGCXGC_TOKEN"))
+    parser.add_argument("--settings", help="settings file (default: user config dir)")
+    parser.add_argument(
+        "--no-restore", action="store_true", help="do not load the saved libraries"
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        from platformdirs import user_config_dir
+
+        from pyGCxGC.app.server import serve
+        from pyGCxGC.app.session import Session
+    except ImportError as exc:
+        print(  # noqa: T201
+            f"The app needs the 'app' extra (pip install \"pyGCxGC[app]\"): {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    settings = args.settings or Path(user_config_dir("pyGCxGC")) / "app.json"
+    session = Session(settings_path=settings)
+    if not args.no_restore:
+        session.restore_libraries()
+    if args.library:
+        session.add_library(args.library)
+    params = {"modulation_time": args.modulation} if args.modulation else {}
+    for path in args.files:
+        session.open_document(path, params=params)
+
+    def ready(port: int, token: str) -> None:
+        print(f"READY {port}", flush=True)  # noqa: T201
+        print(f"http://127.0.0.1:{port}/?token={token}", flush=True)  # noqa: T201
+
+    serve(session, port=args.port, token=args.token, on_ready=ready)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
