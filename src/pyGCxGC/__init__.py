@@ -39,6 +39,9 @@ from .processing import (
     integrate_masks
 )
 
+from . import ms
+from .ms import GCxGC_MS, read_gcxgc_ms, load_library, search_spectrum
+
 # Import GUI functions only if tkinter is available
 try:
     from .mask_gui import launch_mask_creator # type: ignore
@@ -49,6 +52,12 @@ except ImportError:
             "The GUI functionality requires tkinter which is not installed. "
             "Please install tkinter on your system to use this feature."
         )
+
+def launch_ms_viewer(*args, **kwargs):
+    """Launch the GCxGC-MS viewer (see :mod:`pyGCxGC.gui.ms_viewer`)."""
+    from .gui.ms_viewer import launch_ms_viewer as _launch
+
+    return _launch(*args, **kwargs)
 
 # Define what symbols to export when using "from pyGCxGC import *"
 __all__ = [
@@ -72,6 +81,13 @@ __all__ = [
     "mask_chromatogram",
     "integrate_2D",
     "integrate_masks",
+    # Mass spectrometry
+    "ms",
+    "GCxGC_MS",
+    "read_gcxgc_ms",
+    "load_library",
+    "search_spectrum",
     # GUI functions
-    "launch_mask_creator"
+    "launch_mask_creator",
+    "launch_ms_viewer",
 ]

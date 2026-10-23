@@ -71,3 +71,10 @@ s
 
 # local scripts
 run_tests_and_update_badge.py
+
+# Local GCxGC-MS data and (licensed) spectral libraries - never commit
+local_data/
+*.zip
+*.CDF
+*.cdf
+*.qgd

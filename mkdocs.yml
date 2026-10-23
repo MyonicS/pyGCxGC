@@ -11,6 +11,7 @@ nav:
   - Resources:
       - notebooks/Quickstart_notebook.ipynb
       - examples.md
+      - GCxGC-MS viewer: example_docs/gui/ms_viewer.md
   - Code Documentation: reference/ # keep me!
   - Development:
       - example_docs/about/changelog.md

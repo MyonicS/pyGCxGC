@@ -6,7 +6,7 @@
 
 ## Overview
 pyGCxGC is a python package for processing of two dimensional Gas Chromatography (GCxGC) data.
-Presently, it supports generating 2D chromatograms for detectors with one parameter, such as FID.
+It supports 2D chromatograms from single-channel detectors such as FID, and GCxGC-MS data with library searching.
 
 [![Tests](https://github.com/MyonicS/pyGCxGC/actions/workflows/tests.yaml/badge.svg)](https://github.com/MyonicS/pyGCxGC/actions/workflows/tests.yaml)
 [![Test Status](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml/badge.svg?branch=main)](https://github.com/MyonicS/pyGCxGC/actions/workflows/python-package.yml)
@@ -17,6 +17,10 @@ Presently, it supports generating 2D chromatograms for detectors with one parame
 - Generate 2D Chromatograms
 - Integrate areas in 2D Chromatograms using .tif masks
 - GUI for generation of masks
+- GCxGC-MS: read ANDI/AIA netCDF, OpenChrom CSV and JCAMP-DX data, extract background-corrected spectra, view extracted ion chromatograms
+- Spectral library search (NIST-style match / reverse match factors) against your own NIST MS Search library (read directly, no Windows needed) or open MSP libraries such as MoNA
+- 2D peak detection with automatic identification and CSV export
+- GCxGC-MS viewer GUI: chromatogram, spectrum at the selected point and best library match
 
 <p align="center">
   <img src="docs/assets/Example_chromatogram.png" alt="Example 2D Chromatogram" width="400"/>
@@ -115,3 +119,29 @@ The GUI provides tools to:
 - Save masks as .tif files for later use with pyGCxGC's masking functions
 
 For a finer control, save the chromatogram as tif and create a mask image processing software such as ImageJ.
+
+### GCxGC-MS viewer and library search
+
+```bash
+pygcxgc-msviewer run.cdf --library /path/to/MSSEARCH/MAINLIB --modulation 20
+```
+
+The 2D chromatogram is shown on the left. Clicking a point shows its
+background-subtracted mass spectrum (top right) and the best library matches
+(bottom right). *Detect & identify peaks* builds an identified peak table for
+the whole run.
+
+```python
+import pyGCxGC as gcgc
+
+chrom = gcgc.read_gcxgc_ms("run.cdf", modulation_time=20)
+library = gcgc.load_library("/path/to/MSSEARCH/MAINLIB")  # or a .msp / .zip file
+spectrum = chrom.spectrum_at(10.33, 10.1)  # RT1 (min), RT2 (s)
+hits = gcgc.search_spectrum(spectrum.mz, spectrum.intensity, library, mz_min=45, mz_max=500)
+```
+
+Libraries are converted once and cached in `~/.cache/pyGCxGC`. The NIST
+library is licensed software: use only your own copy and never commit it or its
+cache. An open alternative (MoNA GC-MS, ~18 500 EI spectra) can be downloaded
+from the viewer or with `gcgc.ms.download_mona_gcms()`. See
+[docs/example_docs/gui/ms_viewer.md](docs/example_docs/gui/ms_viewer.md) for details.
