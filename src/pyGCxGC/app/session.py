@@ -39,6 +39,7 @@ import contextlib
 import copy
 import csv
 import io
+import itertools
 import json
 import threading
 import time
@@ -53,10 +54,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
-import pandas as pd
 
 from pyGCxGC.main import GCxGC_FID
-from pyGCxGC.masks import Grid, Mask, MaskSet, Polygon, Rect, simplify_lasso
+from pyGCxGC.masks import (
+    Grid,
+    Mask,
+    MaskSet,
+    Polygon,
+    Rect,
+    _masked_volume,
+    _signal,
+    simplify_lasso,
+)
 from pyGCxGC.ms.baseline import make_baseline
 from pyGCxGC.ms.data import GCxGC_MS, Spectrum, estimate_modulation_time
 from pyGCxGC.ms.io import OLE_MAGIC, read_ms_file
@@ -69,9 +78,12 @@ from pyGCxGC.ms.library import (
 from pyGCxGC.ms.peaks import detect_peaks, identify_peaks
 from pyGCxGC.ms.search import Hit, SearchParameters, search_spectrum
 from pyGCxGC.parsing import parse_2D_chromatogram, parse_csv
+from pyGCxGC.processing import integrate_2D
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    import pandas as pd
 
 MAX_UNDO = 200
 IDENTITY_COLUMNS = (
@@ -424,6 +436,7 @@ class Document:
         self.mask_redo: list[MaskSet] = []
         self.masks_revision = 0
         self._integration_cache: tuple | None = None
+        self._volume_cache: dict = {}
         self.warnings: list[str] = []
 
     @property
@@ -534,6 +547,11 @@ class FIDDocument(Document):
     def integration_signal(self):
         return self.chrom.chrom_2D
 
+    def info(self) -> dict:
+        info = super().info()
+        info["sampling_inferred"] = self._params.sampling_interval is None
+        return info
+
     def summary(self) -> str:
         g = self.grid
         hz = 1.0 / g.sampling_interval
@@ -556,6 +574,7 @@ class MSDocument(Document):
         self.peak_hits: dict[int, list[Hit]] = {}
         self.peaks_info: dict = {}
         self._images: OrderedDict = OrderedDict()
+        self._integration_eic: tuple | None = None
         self.masks.grid = self.grid
 
     @classmethod
@@ -624,7 +643,17 @@ class MSDocument(Document):
     def integration_signal(self):
         if self.signal == "tic":
             return self.data.chrom_2D
-        return self.image("eic", self.mz)[::-1].astype(np.float64)
+        # the EIC in double precision, as ``data.eic_2d(mz)[::-1]`` in Python
+        # (the image is float32 for display)
+        with self.lock:
+            data, mz = self.data, tuple(self.mz)
+            cached = self._integration_eic
+        if cached is not None and cached[0] is data and cached[1] == mz:
+            return cached[2]
+        signal = data.eic_2d(list(mz))[::-1]
+        with self.lock:
+            self._integration_eic = (data, mz, signal)
+        return signal
 
     def summary(self) -> str:
         d = self.data
@@ -1344,6 +1373,8 @@ class Session:
                 "can_redo": bool(doc.mask_redo),
                 "masks": masks,
                 "error": integration.get("error"),
+                # saves the Integration panel a request after every edit
+                "integration": None if integration.get("error") else integration,
             }
 
     def _edit_masks(self, doc: Document, change: str, fn: Callable[[MaskSet], Any]):
@@ -1370,6 +1401,7 @@ class Session:
             "masks.updated",
             doc.id,
             change=change,
+            masks_revision=doc.masks_revision,
             can_undo=bool(doc.mask_undo),
             can_redo=bool(doc.mask_redo),
         )
@@ -1567,12 +1599,12 @@ class Session:
 
     def _integration(self, doc: Document, raise_errors: bool) -> dict:
         with doc.lock:
-            key = (
-                doc.masks_revision,
+            signal_key = (
                 doc.revision,
                 getattr(doc, "signal", None),
                 tuple(getattr(doc, "mz", ())),
             )
+            key = (doc.masks_revision, *signal_key)
             cache = doc._integration_cache
             if cache is not None and cache[0] == key:
                 return cache[1]
@@ -1580,39 +1612,96 @@ class Session:
             signal = doc.integration_signal()
             grid = doc.grid
         try:
-            table = masks.integration(grid, signal)
-            overlaps = masks.overlaps(grid)
+            rows, total, overlaps = self._integrate(
+                doc, masks, grid, signal, signal_key
+            )
         except ValueError as exc:
             if raise_errors:
                 raise InvalidRequest(str(exc)) from exc
             return {"masks": [], "error": str(exc)}
-        ids = {m.name: m.id for m in masks}
-        rows = [
-            {
-                "mask_id": ids.get(name),
-                "name": name,
-                "volume": float(r.volume),
-                "percent": None if pd.isna(r.percent) else float(r.percent),
-                "n_pixels": int(r.n_pixels),
-            }
-            for name, r in table.iterrows()
-        ]
         result = {
             "document_id": doc.id,
             "signal": getattr(doc, "signal", "tic"),
             "mz": list(getattr(doc, "mz", [])),
-            "total": float(table.attrs["total"]),
+            "total": total,
             "masks": rows[:-1],
             "unassigned": rows[-1],
-            "overlaps": [
-                {"a": ids[a], "b": ids[b], "names": [a, b], "n_pixels": n}
-                for a, b, n in overlaps
-            ],
+            "overlaps": overlaps,
             "error": None,
+            "masks_revision": key[0],
         }
         with doc.lock:
             doc._integration_cache = (key, result)
         return result
+
+    @staticmethod
+    def _integrate(doc: Document, masks: MaskSet, grid: Grid, signal, signal_key):
+        """
+        ``MaskSet.integration`` and ``overlaps``, reusing what is known about
+        masks whose operations did not change (operations are immutable and
+        shared between copies, so their identity is the key): the volume, the
+        pixel count and the weights inside the mask's bounding box. An edit
+        integrates only the changed mask and the union, whatever the number
+        of masks. The same functions run on the same arrays in the same
+        order, so the results are identical.
+        """
+        values = _signal(grid, signal)
+        cache = doc._volume_cache
+        if cache.get("signal") != signal_key:
+            total = float(integrate_2D(values))
+            cache = {"signal": signal_key, "total": total, "masks": {}}
+        total = cache["total"]
+        union = np.zeros(values.shape)
+        rows, blocks, entries = [], [], {}
+        for m in masks:
+            ops = tuple(m.operations)
+            hit = cache["masks"].get(m.id)
+            if (
+                hit is None
+                or len(hit["ops"]) != len(ops)
+                or not all(a is b for a, b in zip(hit["ops"], ops, strict=True))
+            ):
+                w = m.rasterize(grid)
+                r = np.flatnonzero(w.any(axis=1))
+                c = np.flatnonzero(w.any(axis=0))
+                box = (
+                    (int(r[0]), int(r[-1]) + 1, int(c[0]), int(c[-1]) + 1)
+                    if len(r)
+                    else None
+                )
+                hit = {
+                    "ops": ops,
+                    "volume": _masked_volume(values, w),
+                    "n_pixels": int((w > 0).sum()),
+                    "box": box,
+                    "block": w[box[0] : box[1], box[2] : box[3]].copy()
+                    if box
+                    else None,
+                }
+            entries[m.id] = hit
+            if hit["box"] is not None:
+                r0, r1, c0, c1 = hit["box"]
+                # outside the box the weights are 0, so this is the full maximum
+                np.maximum(union[r0:r1, c0:c1], hit["block"], out=union[r0:r1, c0:c1])
+            rows.append((m, hit["volume"], hit["n_pixels"]))
+            blocks.append((m, hit["box"], hit["block"]))
+        unassigned = total - _masked_volume(values, union)
+        cache["masks"] = entries
+        doc._volume_cache = cache
+
+        def row(mask_id, name, volume, n_pixels):
+            percent = volume / total * 100 if total else None
+            return {
+                "mask_id": mask_id,
+                "name": name,
+                "volume": float(volume),
+                "percent": percent,
+                "n_pixels": int(n_pixels),
+            }
+
+        out = [row(m.id, m.name, v, n) for m, v, n in rows]
+        out.append(row(None, "unassigned", unassigned, int((union == 0).sum())))
+        return out, total, _overlaps(blocks)
 
     def _parse_shape(self, doc: Document, shape: dict):
         try:
@@ -1896,7 +1985,11 @@ class Session:
         return None, str(path), media_type
 
     def _integration_csv(self, doc: Document) -> str:
-        result = self.integration(doc.id)
+        return _csv([self._integration_row(doc, self.integration(doc.id))])
+
+    @staticmethod
+    def _integration_row(doc: Document, result: dict) -> dict[str, Any]:
+        """CSV row: file, name, processing parameters, signal, one column per mask."""
         row: dict[str, Any] = {"file": doc.path or "", "name": doc.name}
         for key, value in asdict(doc.params).items():
             is_model = key == "baseline" and isinstance(value, dict)
@@ -1908,11 +2001,81 @@ class Session:
         for r in result["masks"]:
             row[r["name"]] = r["volume"]
         row["unassigned"] = result["unassigned"]["volume"]
-        buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=list(row))
-        writer.writeheader()
-        writer.writerow(row)
-        return buf.getvalue()
+        return row
+
+    def batch_integrate(
+        self, document_id: str, paths: list[str | Path], out: str | Path | None = None
+    ) -> Job:
+        """
+        Integrate the masks of a document on other files (spec INT-4).
+
+        Every file is processed with the document's parameters (for MS files
+        also its signal, TIC or EIC) and integrated exactly as if it were
+        opened in the app. Job result: ``{"csv": text, "n_files": n, "failed":
+        [{"file", "error"}], "path": out}``; the CSV has one row per file, and
+        files that fail get an ``error`` column instead of volumes.
+
+        Parameters
+        ----------
+        paths : list of str or Path
+            Chromatogram files of the same kind as the document.
+        out : str or Path, optional
+            Also write the CSV here.
+        """
+        doc = self.document(document_id)
+        files = [Path(p).expanduser() for p in paths]
+        if not files:
+            raise InvalidRequest("Choose at least one file")
+        for f in files:
+            if not f.is_file():
+                raise InvalidRequest(f"File not found: {f}")
+        with doc.lock:
+            masks = doc.masks.copy()
+            params = copy.deepcopy(doc._params if doc.kind == "fid" else doc.params)
+            signal = getattr(doc, "signal", "tic")
+            mz = list(getattr(doc, "mz", []))
+        if not len(masks):
+            raise InvalidRequest("There are no masks")
+
+        def work(job: Job) -> dict:
+            rows, failed = [], []
+            for k, path in enumerate(files):
+                job.report(k / len(files), f"{path.name} ({k + 1}/{len(files)})")
+                try:
+                    if isinstance(params, FIDParams):
+                        other: Document = FIDDocument.open(path, replace(params))
+                    else:
+                        other = MSDocument.open(path, replace(params))
+                        other.signal, other.mz = signal, mz
+                    other.masks = masks.copy()
+                    out_rows, _, _ = self._integrate(
+                        other,
+                        other.masks,
+                        other.grid,
+                        other.integration_signal(),
+                        ("batch",),
+                    )
+                    result = {"masks": out_rows[:-1], "unassigned": out_rows[-1]}
+                    rows.append(self._integration_row(other, result))
+                except JobCancelled:
+                    raise
+                except Exception as exc:  # report the file, go on with the next
+                    error = _error_text(exc)
+                    failed.append({"file": str(path), "error": error})
+                    rows.append({"file": str(path), "name": path.name, "error": error})
+            text = _csv(rows)
+            if out is not None:
+                self._write(text.encode(), out, "", "text/csv")
+            return {
+                "csv": text,
+                "n_files": len(files),
+                "failed": failed,
+                "path": str(Path(out).expanduser()) if out is not None else None,
+            }
+
+        return self.submit(
+            "batch", f"Batch integration of {len(files)} files", work, doc.id
+        )
 
     # ------------------------------------------------------------ files
     @staticmethod
@@ -2001,6 +2164,36 @@ def detect_kind(path: str | Path) -> str:
                 return "ms"  # numeric column names are m/z values
         return "fid"
     raise InvalidRequest(f"Unsupported file type: {path.name}")
+
+
+def _overlaps(blocks: list[tuple[Mask, tuple | None, np.ndarray | None]]) -> list[dict]:
+    """Shared pixels of every overlapping pair (masks as bounding box and weights)."""
+    out = []
+    for (a, ba, wa), (b, bb, wb) in itertools.combinations(blocks, 2):
+        if ba is None or bb is None:
+            continue
+        r0, r1 = max(ba[0], bb[0]), min(ba[1], bb[1])
+        c0, c1 = max(ba[2], bb[2]), min(ba[3], bb[3])
+        if r0 >= r1 or c0 >= c1:
+            continue
+        sa = wa[r0 - ba[0] : r1 - ba[0], c0 - ba[2] : c1 - ba[2]]
+        sb = wb[r0 - bb[0] : r1 - bb[0], c0 - bb[2] : c1 - bb[2]]
+        n = int(np.count_nonzero((sa > 0) & (sb > 0)))
+        if n:
+            out.append({"a": a.id, "b": b.id, "names": [a.name, b.name], "n_pixels": n})
+    return out
+
+
+def _csv(rows: list[dict]) -> str:
+    """CSV with the union of the rows' columns, in order of appearance."""
+    fields: dict[str, None] = {}
+    for row in rows:
+        fields.update(dict.fromkeys(row))
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(fields), restval="")
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue()
 
 
 def _operation_info(op) -> dict:

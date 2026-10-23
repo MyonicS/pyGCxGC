@@ -55,9 +55,10 @@ files you change, and do not reformat untouched legacy code.
 | `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
 | `frontend/src/api/` | Transport (HTTP + WebSocket, spec NB-4), typed client, binary array decoder; `schema.d.ts` is generated |
-| `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events), `view` (display, zoom, tool), `images` (overview + detail layers) |
+| `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events; per-document mask edit queue), `view` (display, zoom, tool, active mask, selected shape), `images` (overview + detail layers), `masks.ts` (mask commands) |
 | `frontend/src/chromatogram/` | WebGL2 renderer (`renderer.ts`, all display maths in the shader), view, axes, colour bar, overlays, Display popover |
-| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts, open dialog, settings, command palette; Processing panel, placeholders |
+| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts, file browser, open and path dialogs, settings, command palette; Processing, Masks and Integration panels, placeholders |
+| `docs/example_docs/gui/app.md` | User documentation of the app |
 | `frontend/e2e/` | Playwright tests; `backend.py` serves a session with the example FID and a synthetic MS run |
 | `scripts/export_*.py` | Generated frontend inputs: colour maps, OpenAPI snapshot, matplotlib interpolation reference |
 | `specs/app.md` | Specification of the new desktop/web app (React frontend on a FastAPI session layer). Read it before working on `frontend/`, `desktop/` or `pyGCxGC.app` |
@@ -157,6 +158,23 @@ files you change, and do not reformat untouched legacy code.
 * **Revisions.** `document.updated` payloads carry the new revision (fixed in
   `Session.emit`; the info used to be taken before the bump). The frontend
   refetches an image when `doc.revision` changes.
+* **Mask edits.** Every edit response (`MaskSetInfo`) carries the integration,
+  so the panels update with one request. `Session._integrate` caches, per mask,
+  volume, pixel count and the weights inside its bounding box, keyed by the
+  identity of its (immutable, shared) operations; an edit integrates only the
+  changed mask and the union, bit-identical to `MaskSet.integration`. EICs are
+  integrated in float64 (the image is float32 for display). The frontend runs
+  a document's mask edits one after another (`queueMaskEdit`), so "New mask"
+  then drawing goes into the new mask, and ignores `masks.updated` events of
+  its own edits in flight.
+* **UI pitfalls.** `TooltipTrigger asChild` overwrites the child's
+  `data-state`, so toggle styles also key on `aria-checked`/`aria-pressed`. A
+  native `<input type="color">` overflows small swatches unless sized and
+  clipped. AG Grid registers only the modules in use (`AllCommunityModule`
+  doubled the bundle) and never loads Google fonts.
+* Playwright `--update-snapshots` only rewrites failing screenshots; use
+  `--update-snapshots=all` after intended UI changes. The e2e tests call
+  Python (`helpers.python`) to check results against `integrate_masks`.
 * Screenshots and frame timing: headless Chromium can use the real GPU with
   `--use-angle=vulkan --enable-features=Vulkan` (or `gl-egl`); the tests use
   SwiftShader for determinism.

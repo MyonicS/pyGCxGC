@@ -19,7 +19,18 @@ export const INTERPOLATION_LABELS: Record<Interpolation, string> = {
   bicubic: 'Bicubic',
 }
 
-export type Tool = 'select' | 'pan' | 'zoom'
+export type Tool = 'select' | 'pan' | 'zoom' | 'rect' | 'lasso' | 'polygon'
+
+/** Tools that draw mask shapes (spec MASK-4). */
+export const DRAW_TOOLS: readonly Tool[] = ['rect', 'lasso', 'polygon']
+export const isDrawTool = (t: Tool) => DRAW_TOOLS.includes(t)
+
+/** A shape (operation) of a mask, selected for editing (spec MASK-6). */
+export interface SelectedShape {
+  docId: string
+  maskId: string
+  opId: string
+}
 
 export interface Display {
   colormap: ColormapName
@@ -60,6 +71,11 @@ export interface ViewState {
   cursor: Cursor | null
   /** Phase shift being dragged in the Processing panel (spec FID-5). */
   shiftPreview: Record<string, number | undefined>
+  /** Drawing subtracts from the active mask (or hold Alt). */
+  subtract: boolean
+  /** The mask new shapes go into, per document (spec MASK-3). */
+  activeMask: Record<string, string | undefined>
+  selectedShape: SelectedShape | null
 }
 
 export const useView = create<ViewState>(() => ({
@@ -69,6 +85,9 @@ export const useView = create<ViewState>(() => ({
   lock: null,
   cursor: null,
   shiftPreview: {},
+  subtract: false,
+  activeMask: {},
+  selectedShape: null,
 }))
 
 const set = useView.setState
@@ -142,6 +161,37 @@ export function setTool(tool: Tool) {
   set({ tool })
 }
 
+export function setSubtract(subtract: boolean) {
+  set({ subtract })
+}
+
+export function setActiveMask(docId: string, maskId: string | undefined) {
+  set((s) => ({
+    activeMask: { ...s.activeMask, [docId]: maskId },
+    // a selected shape belongs to the active mask
+    selectedShape: s.selectedShape?.maskId === maskId ? s.selectedShape : null,
+  }))
+}
+
+export function selectShape(shape: SelectedShape | null) {
+  set((s) => ({
+    selectedShape: shape,
+    activeMask: shape ? { ...s.activeMask, [shape.docId]: shape.maskId } : s.activeMask,
+  }))
+}
+
+/**
+ * The active mask of a document: the chosen one while it exists, else the
+ * last mask (new masks are appended), else none.
+ */
+export function resolveActiveMask(
+  chosen: string | undefined,
+  maskIds: readonly string[],
+): string | undefined {
+  if (chosen && maskIds.includes(chosen)) return chosen
+  return maskIds.at(-1)
+}
+
 export function setCursor(cursor: Cursor | null) {
   set({ cursor })
 }
@@ -158,11 +208,15 @@ export function forgetDocument(docId: string) {
     delete display[docId]
     delete domains[docId]
     delete shiftPreview[docId]
+    const activeMask = { ...s.activeMask }
+    delete activeMask[docId]
     return {
       display,
       domains,
       shiftPreview,
+      activeMask,
       cursor: s.cursor?.docId === docId ? null : s.cursor,
+      selectedShape: s.selectedShape?.docId === docId ? null : s.selectedShape,
     }
   })
 }

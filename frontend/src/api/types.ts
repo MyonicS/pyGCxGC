@@ -23,6 +23,18 @@ export type OpenDocumentRequest = Schemas['OpenDocumentRequest']
 export type JobStarted = Schemas['JobStarted']
 export type SelectRequest = Schemas['SelectRequest']
 export type ErrorResponse = Schemas['ErrorResponse']
+export type OperationInfo = Schemas['OperationInfo']
+export type IntegrationRow = Schemas['IntegrationRow']
+export type MaskUpdate = Schemas['MaskUpdate']
+export type MaskImport = Schemas['MaskImport']
+export type ExportRequest = Schemas['ExportRequest']
+
+/** Shapes of mask operations (`OperationInfo.shape`). */
+export type Shape =
+  | { type: 'rect'; rt1: [number, number]; rt2: [number, number] }
+  | { type: 'polygon' | 'lasso'; vertices: [number, number][] }
+
+export type ShapeInfo = Shape | { type: 'raster'; shape?: number[] }
 
 export type DocumentKind = DocumentInfo['kind']
 
@@ -69,7 +81,13 @@ export type SessionEvent =
       change: string
       document: DocumentInfo | null
     })
-  | (EventBase & { type: 'masks.updated'; change?: string })
+  | (EventBase & {
+      type: 'masks.updated'
+      change?: string
+      masks_revision?: number
+      can_undo?: boolean
+      can_redo?: boolean
+    })
   | (EventBase & { type: 'peaks.updated'; n_peaks?: number; stale?: boolean })
   | (EventBase & { type: 'library.updated'; library: LibraryInfo })
   | (EventBase & { type: 'selection.changed'; selection: SelectionInfo | null })

@@ -496,6 +496,11 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
     def integration(doc_id: str):
         return clean(session.integration(doc_id))
 
+    @api.post("/documents/{doc_id}/batch", response_model=S.JobStarted, status_code=202)
+    def batch(doc_id: str, req: S.BatchRequest):
+        """Integrate the masks on other files (job; the result holds the CSV)."""
+        return started(session.batch_integrate(doc_id, req.paths, req.path))
+
     # -------------------------------------------------------------- export
     @api.post(
         "/documents/{doc_id}/export",

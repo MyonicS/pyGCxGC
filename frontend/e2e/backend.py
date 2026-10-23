@@ -1,13 +1,16 @@
 """
 Backend for the end-to-end tests: ``python e2e/backend.py --port P --data DIR``.
 
-Writes a synthetic GCxGC-MS run (``DIR/run.cdf``, from ``tests/synthetic.py``)
-and serves a fresh session with in-memory settings and the built frontend.
+Writes two synthetic GCxGC-MS runs (``DIR/run.cdf``, ``DIR/other.cdf``, from
+``tests/synthetic.py``) and ``DIR/expected.json`` (``integrate_masks`` of the
+example FID with the example mask TIFFs), then serves a fresh session with
+in-memory settings and the built frontend.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -17,8 +20,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from synthetic import synthetic_run, write_andi  # noqa: E402
 
+import pyGCxGC as gcgc  # noqa: E402
 from pyGCxGC.app.server import serve  # noqa: E402
 from pyGCxGC.app.session import Session  # noqa: E402
+
+EXAMPLE = ROOT / "example_data"
 
 
 def main() -> None:
@@ -29,8 +35,13 @@ def main() -> None:
     args = parser.parse_args()
     data = Path(args.data)
     data.mkdir(parents=True, exist_ok=True)
-    raw, _ = synthetic_run()
-    write_andi(raw, data / "run.cdf")
+    write_andi(synthetic_run()[0], data / "run.cdf")
+    write_andi(synthetic_run(seed=5)[0], data / "other.cdf")
+    chrom = gcgc.parse_2D_chromatogram(
+        EXAMPLE / "example_chromatograms" / "Example_FID.csv", modulation_time=20
+    )
+    expected = gcgc.integrate_masks(chrom.chrom_2D, EXAMPLE / "example_masks")
+    (data / "expected.json").write_text(json.dumps(expected))
 
     def ready(port: int, _token: str) -> None:
         print(f"READY {port}", flush=True)  # noqa: T201

@@ -117,6 +117,9 @@ class DocumentInfo(Info):
     n_scans: int | None = None
     baseline: str | None = None
     has_peaks: bool | None = None
+    sampling_inferred: bool | None = Field(
+        None, description="FID: the sampling interval was inferred from the data"
+    )
 
 
 class SignalRequest(Model):
@@ -326,6 +329,9 @@ class MaskSetInfo(Info):
     can_redo: bool
     masks: list[MaskInfo]
     error: str | None
+    integration: IntegrationResult | None = Field(
+        None, description="The integration (when the masks can be integrated)"
+    )
 
 
 class MaskImport(Model):
@@ -359,6 +365,7 @@ class IntegrationResult(Info):
     unassigned: IntegrationRow
     overlaps: list[Overlap]
     error: str | None
+    masks_revision: int | None = Field(None, description="Mask revision integrated")
 
 
 # ------------------------------------------------------------------ export, files
@@ -366,6 +373,11 @@ class ExportRequest(Model):
     what: Literal["masks", "mask_set", "integration", "peaks", "spectrum"]
     format: Literal["tiff", "json", "csv", "msp", "txt"] | None = None
     path: str | None = Field(None, description="Write here (desktop); else download")
+
+
+class BatchRequest(Model):
+    paths: list[str] = Field(min_length=1, description="Files of the same kind")
+    path: str | None = Field(None, description="Also write the CSV here")
 
 
 class ExportResult(Model):

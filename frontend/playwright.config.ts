@@ -18,7 +18,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: {
     timeout: 15_000,
-    toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled', caret: 'hide' },
+    toHaveScreenshot: { maxDiffPixelRatio: 0.003, animations: 'disabled', caret: 'hide' },
   },
   reporter: process.env.CI ? 'github' : 'list',
   use: {

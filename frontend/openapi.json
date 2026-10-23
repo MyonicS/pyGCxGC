@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "BatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Also write the CSV here",
+            "title": "Path"
+          },
+          "paths": {
+            "description": "Files of the same kind",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "title": "BatchRequest",
+        "type": "object"
+      },
       "DetectPeaksRequest": {
         "additionalProperties": false,
         "properties": {
@@ -131,6 +162,18 @@
           "revision": {
             "title": "Revision",
             "type": "integer"
+          },
+          "sampling_inferred": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "FID: the sampling interval was inferred from the data",
+            "title": "Sampling Inferred"
           },
           "shape": {
             "items": {
@@ -569,6 +612,18 @@
             },
             "title": "Masks",
             "type": "array"
+          },
+          "masks_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mask revision integrated",
+            "title": "Masks Revision"
           },
           "mz": {
             "items": {
@@ -1166,6 +1221,17 @@
               }
             ],
             "title": "Error"
+          },
+          "integration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The integration (when the masks can be integrated)"
           },
           "masks": {
             "items": {
@@ -2522,6 +2588,76 @@
           }
         },
         "summary": "Update Document"
+      }
+    },
+    "/api/documents/{doc_id}/batch": {
+      "post": {
+        "description": "Integrate the masks on other files (job; the result holds the CSV).",
+        "operationId": "batch_api_documents__doc_id__batch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch"
       }
     },
     "/api/documents/{doc_id}/export": {

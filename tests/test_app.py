@@ -159,6 +159,146 @@ def test_session_fid_masks_and_undo(session):
     assert session.masks(doc_id).names == ["Mask_1", "Mask_2", "Box"]
 
 
+def test_session_integration_reuses_unchanged_masks(session, ms_files, monkeypatch):
+    """Edits integrate only the changed mask; results equal MaskSet.integration."""
+    import pyGCxGC.app.session as session_module
+
+    cdf, _, _ = ms_files
+    doc_id = session.wait(session.open_document(cdf, params={"modulation_time": 4}))[
+        "document_id"
+    ]
+    doc = session.document(doc_id)
+    a = session.create_mask(doc_id, "A")
+    session.add_shape(
+        doc_id, a.id, {"type": "rect", "rt1": [0.3, 1.0], "rt2": [0.5, 2]}
+    )
+    b = session.create_mask(doc_id, "B")
+    session.add_shape(
+        doc_id,
+        b.id,
+        {"type": "polygon", "vertices": [[0.8, 1], [1.8, 1.2], [1.2, 3.5]]},
+    )
+    c = session.create_mask(doc_id, "C")
+    op = session.add_shape(
+        doc_id, c.id, {"type": "rect", "rt1": [2.0, 2.5], "rt2": [0.1, 0.4]}
+    )
+    session.add_shape(
+        doc_id, b.id, {"type": "rect", "rt1": [1, 1.2], "rt2": [1, 2]}, "subtract"
+    )
+
+    def check():
+        result = session.integration(doc_id)
+        table = doc.masks.integration(doc.grid, doc.integration_signal())
+        got = [
+            (r["name"], r["volume"], r["percent"], r["n_pixels"])
+            for r in result["masks"]
+        ]
+        got.append(
+            (
+                "unassigned",
+                result["unassigned"]["volume"],
+                result["unassigned"]["percent"],
+                result["unassigned"]["n_pixels"],
+            )
+        )
+        want = [(n, r.volume, r.percent, r.n_pixels) for n, r in table.iterrows()]
+        assert got == want  # bit for bit
+        assert result["total"] == table.attrs["total"]
+        overlaps = [(*o["names"], o["n_pixels"]) for o in result["overlaps"]]
+        assert overlaps == doc.masks.overlaps(doc.grid)
+        return result
+
+    assert check()["overlaps"]  # A and B overlap
+    calls = []
+    real = session_module._masked_volume
+    monkeypatch.setattr(
+        session_module, "_masked_volume", lambda v, w: calls.append(1) or real(v, w)
+    )
+    session.replace_shape(
+        doc_id, c.id, op, {"type": "rect", "rt1": [2.0, 2.6], "rt2": [0.1, 0.4]}
+    )
+    check()
+    assert len(calls) == 2  # the changed mask and the union
+    calls.clear()
+    session.undo_masks(doc_id)
+    session.delete_mask(doc_id, a.id)
+    check()
+    # C changed back by the undo, and the union; B is reused
+    assert len(calls) == 2
+    calls.clear()
+    session.update_document(doc_id, shift=1)
+    session.wait(next(j for j in session.jobs.values() if j.kind == "process"))
+    check()
+    assert len(calls) == 3  # new signal: every mask again, plus the union
+
+
+def test_batch_integration(client, ms_files, tmp_path):
+    """INT-4: one CSV row per file, equal to integrating each file in the app."""
+    cdf, _, _ = ms_files
+    other = write_andi(synthetic_run(seed=5)[0], tmp_path / "other.cdf")
+    (tmp_path / "broken.cdf").write_bytes(b"CDF\x01 not really")
+    params = {"modulation_time": 4, "shift": 1}
+    doc_id = wait_job(
+        client, client.post("/api/documents", json={"path": str(cdf), "params": params})
+    )["document_id"]
+    masks = f"/api/documents/{doc_id}/masks"
+    box = client.post(masks, json={"name": "Box"}).json()["masks"][0]["id"]
+    client.post(
+        f"{masks}/{box}/operations",
+        json={"shape": {"type": "rect", "rt1": [0.3, 1.5], "rt2": [0.5, 2.5]}},
+    )
+    client.put(f"/api/documents/{doc_id}/signal", json={"signal": "eic", "mz": [91]})
+    for _ in range(100):
+        if client.get(f"/api/documents/{doc_id}").json()["signal"] == "eic":
+            break
+        time.sleep(0.05)
+    out = tmp_path / "batch.csv"
+    files = [str(cdf), str(other), str(tmp_path / "broken.cdf")]
+    r = client.post(
+        f"/api/documents/{doc_id}/batch", json={"paths": files, "path": str(out)}
+    )
+    result = wait_job(client, r)
+    assert result["n_files"] == 3
+    assert [f["file"] for f in result["failed"]] == files[2:]
+    rows = list(csv.DictReader(io.StringIO(result["csv"])))
+    assert out.read_bytes() == result["csv"].encode()
+    assert [row["file"] for row in rows] == files
+    assert rows[0]["signal"] == "EIC 91"
+    assert rows[0]["shift"] == "1"
+    assert rows[2]["error"]
+    assert not rows[2]["Box"]
+
+    # the same as opening each file and integrating it
+    assert (
+        float(rows[0]["Box"])
+        == client.get(f"/api/documents/{doc_id}/integration").json()["masks"][0][
+            "volume"
+        ]
+    )
+    other_id = wait_job(
+        client,
+        client.post("/api/documents", json={"path": str(other), "params": params}),
+    )["document_id"]
+    client.post(
+        f"/api/documents/{other_id}/masks/import", json={"from_document": doc_id}
+    )
+    client.put(f"/api/documents/{other_id}/signal", json={"signal": "eic", "mz": [91]})
+    for _ in range(100):
+        if client.get(f"/api/documents/{other_id}").json()["signal"] == "eic":
+            break
+        time.sleep(0.05)
+    expected = client.get(f"/api/documents/{other_id}/integration").json()
+    assert float(rows[1]["Box"]) == expected["masks"][0]["volume"]
+    assert float(rows[1]["unassigned"]) == expected["unassigned"]["volume"]
+
+    assert (
+        client.post(f"/api/documents/{doc_id}/batch", json={"paths": []}).status_code
+        == 422
+    )
+    r = client.post(f"/api/documents/{doc_id}/batch", json={"paths": ["/nope.cdf"]})
+    assert r.status_code == 400
+
+
 def test_session_live_ms_object(session):
     raw, truth = synthetic_run()
     data = GCxGC_MS(raw, 4.0)
@@ -182,6 +322,11 @@ def test_session_live_ms_object(session):
     eic = session.integration(doc.id)
     assert eic["signal"] == "eic"
     assert 0 < eic["masks"][0]["volume"] < tic["masks"][0]["volume"]
+    # exactly as in Python (double precision, not the float32 display image)
+    masks = session.masks(doc.id)
+    assert tic["masks"][0]["volume"] == masks.integrate(data)[mask.name]
+    expected = masks.integrate(data, data=data.eic_2d([128])[::-1])[mask.name]
+    assert eic["masks"][0]["volume"] == expected
     # vector masks can be reused on another grid, raster ones only on the same shape
     fid_doc = session.add_document(
         gcgc.parse_2D_chromatogram(FID_CSV, modulation_time=20)

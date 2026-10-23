@@ -20,8 +20,17 @@ export interface RequestOptions {
 
 export type ConnectionState = 'connecting' | 'open' | 'closed'
 
+/** A file returned by the API (exports in the browser). */
+export interface DownloadedFile {
+  data: ArrayBuffer
+  filename: string
+  mediaType: string
+}
+
 export interface Transport {
   request<T = unknown>(method: string, path: string, options?: RequestOptions): Promise<T>
+  /** Like `request`, but return the body as a file (name from Content-Disposition). */
+  download(method: string, path: string, options?: RequestOptions): Promise<DownloadedFile>
   /** Receive session events; returns an unsubscribe function. */
   subscribe(
     onEvent: (event: SessionEvent) => void,
@@ -65,6 +74,24 @@ export class HttpTransport implements Transport {
   }
 
   async request<T = unknown>(method: string, path: string, options: RequestOptions = {}) {
+    const response = await this.fetch(method, path, options)
+    if (response.status === 204) return undefined as T
+    if (options.binary) return (await response.arrayBuffer()) as T
+    return (await response.json()) as T
+  }
+
+  async download(method: string, path: string, options: RequestOptions = {}) {
+    const response = await this.fetch(method, path, { ...options, binary: true })
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)
+    return {
+      data: await response.arrayBuffer(),
+      filename: match ? decodeURIComponent(match[1]) : 'download',
+      mediaType: response.headers.get('Content-Type') ?? 'application/octet-stream',
+    }
+  }
+
+  private async fetch(method: string, path: string, options: RequestOptions): Promise<Response> {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.token}` }
     let body: string | undefined
     if (options.body !== undefined) {
@@ -103,9 +130,7 @@ export class HttpTransport implements Transport {
       }
       throw new ApiError(detail, response.status, type, traceback)
     }
-    if (response.status === 204) return undefined as T
-    if (options.binary) return (await response.arrayBuffer()) as T
-    return (await response.json()) as T
+    return response
   }
 
   subscribe(

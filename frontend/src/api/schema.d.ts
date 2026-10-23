@@ -47,6 +47,26 @@ export interface paths {
         patch: operations["update_document_api_documents__doc_id__patch"];
         trace?: never;
     };
+    "/api/documents/{doc_id}/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Batch
+         * @description Integrate the masks on other files (job; the result holds the CSV).
+         */
+        post: operations["batch_api_documents__doc_id__batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/documents/{doc_id}/export": {
         parameters: {
             query?: never;
@@ -551,6 +571,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BatchRequest */
+        BatchRequest: {
+            /**
+             * Path
+             * @description Also write the CSV here
+             */
+            path?: string | null;
+            /**
+             * Paths
+             * @description Files of the same kind
+             */
+            paths: string[];
+        };
         /** DetectPeaksRequest */
         DetectPeaksRequest: {
             /**
@@ -601,6 +634,11 @@ export interface components {
             path: string | null;
             /** Revision */
             revision: number;
+            /**
+             * Sampling Inferred
+             * @description FID: the sampling interval was inferred from the data
+             */
+            sampling_inferred?: boolean | null;
             /** Shape */
             shape: number[];
             /** Signal */
@@ -746,6 +784,11 @@ export interface components {
             error: string | null;
             /** Masks */
             masks: components["schemas"]["IntegrationRow"][];
+            /**
+             * Masks Revision
+             * @description Mask revision integrated
+             */
+            masks_revision?: number | null;
             /** Mz */
             mz: number[];
             /** Overlaps */
@@ -950,6 +993,8 @@ export interface components {
             document_id: string;
             /** Error */
             error: string | null;
+            /** @description The integration (when the masks can be integrated) */
+            integration?: components["schemas"]["IntegrationResult"] | null;
             /** Masks */
             masks: components["schemas"]["MaskInfo"][];
             /** Revision */
@@ -1529,6 +1574,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProcessingParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStarted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_api_documents__doc_id__batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRequest"];
             };
         };
         responses: {

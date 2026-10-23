@@ -11,6 +11,7 @@ import { Api } from '@/api/client'
 import { ApiError, type ConnectionState, type Transport } from '@/api/transport'
 import type {
   DocumentInfo,
+  IntegrationResult,
   JobInfo,
   LibraryInfo,
   MaskSetInfo,
@@ -39,8 +40,17 @@ export interface SessionState {
   selections: Record<string, SelectionInfo | null>
   peaks: Record<string, PeakTable | null>
   masks: Record<string, MaskSetInfo>
+  integration: Record<string, IntegrationState | undefined>
   /** Last event revision per document (spec API-4). */
   revisions: Record<string, number>
+}
+
+export interface IntegrationState {
+  result: IntegrationResult | null
+  /** Why the masks cannot be integrated (e.g. a raster mask of another shape). */
+  error: string | null
+  /** Mask revision the result belongs to. */
+  masksRevision: number
 }
 
 export const useSession = create<SessionState>(() => ({
@@ -58,6 +68,7 @@ export const useSession = create<SessionState>(() => ({
   selections: {},
   peaks: {},
   masks: {},
+  integration: {},
   revisions: {},
 }))
 
@@ -146,12 +157,93 @@ async function refreshPeaks(docId: string) {
 
 async function refreshMasks(docId: string) {
   try {
-    const masks = await api().masks(docId)
-    set((s) => ({ masks: { ...s.masks, [docId]: masks } }))
+    applyMasks(docId, await api().masks(docId), true)
   } catch (err) {
     if (!(err instanceof ApiError && err.status === 404)) console.warn(err)
   }
 }
+
+/**
+ * Store a mask set and its integration (both come with every mask response).
+ * Older revisions are ignored unless `force` (after re-processing the
+ * revision stays the same but pixel counts and volumes change).
+ */
+function applyMasks(docId: string, info: MaskSetInfo, force = false) {
+  set((s) => {
+    const current = s.masks[docId]
+    if (!force && current && current.revision > info.revision) return {}
+    const integration: IntegrationState = {
+      result: info.integration ?? null,
+      error: info.integration ? null : (info.error ?? null),
+      masksRevision: info.revision,
+    }
+    return {
+      masks: { ...s.masks, [docId]: info },
+      integration: { ...s.integration, [docId]: integration },
+    }
+  })
+}
+
+const maskQueues = new Map<string, Promise<unknown>>()
+
+/**
+ * Run the mask edits of a document one after the other, in the order they
+ * were made (requests could otherwise overtake each other), so an edit sees
+ * the result of the previous one (e.g. the mask "New mask" made active).
+ */
+export function queueMaskEdit<T>(docId: string, task: () => Promise<T>): Promise<T> {
+  const previous = maskQueues.get(docId) ?? Promise.resolve()
+  const next = previous.then(task, task)
+  maskQueues.set(
+    docId,
+    next.catch(() => undefined),
+  )
+  return next
+}
+
+/**
+ * Run a mask edit (spec MASK-*) in the document's queue: the returned mask
+ * set is shown at once and the integration refreshed. Errors are toasts;
+ * returns `null` then.
+ */
+export function maskAction(
+  docId: string,
+  label: string,
+  fn: (api: Api) => Promise<MaskSetInfo>,
+): Promise<MaskSetInfo | null> {
+  return queueMaskEdit(docId, () => runMaskAction(docId, label, fn))
+}
+
+/** {@link maskAction} without the queue (inside a queued task). */
+export async function runMaskAction(
+  docId: string,
+  label: string,
+  fn: (api: Api) => Promise<MaskSetInfo>,
+): Promise<MaskSetInfo | null> {
+  inFlight.set(docId, (inFlight.get(docId) ?? 0) + 1)
+  try {
+    const info = await fn(api())
+    applyMasks(docId, info)
+    return info
+  } catch (err) {
+    notifyError(label, err)
+    return null
+  } finally {
+    const left = (inFlight.get(docId) ?? 1) - 1
+    inFlight.set(docId, left)
+    // a change made elsewhere meanwhile (e.g. from a notebook)
+    const missed = missedRevision.get(docId) ?? -1
+    if (left === 0 && missed > (get().masks[docId]?.revision ?? -1)) void refreshMasks(docId)
+    if (left === 0) missedRevision.delete(docId)
+  }
+}
+
+/**
+ * Edits in flight per document: their own `masks.updated` events are not
+ * refetched (the response brings the state), only later revisions.
+ */
+const inFlight = new Map<string, number>()
+const missedRevision = new Map<string, number>()
 
 // ------------------------------------------------------------------ events
 const jobWaiters = new Map<string, Array<(job: JobInfo) => void>>()
@@ -179,9 +271,16 @@ export function handleEvent(event: SessionEvent): void {
     case 'peaks.updated':
       if (docId) void refreshPeaks(docId)
       break
-    case 'masks.updated':
-      if (docId) void refreshMasks(docId)
+    case 'masks.updated': {
+      if (!docId) break
+      const revision = event.masks_revision ?? Infinity
+      if ((inFlight.get(docId) ?? 0) > 0) {
+        missedRevision.set(docId, Math.max(missedRevision.get(docId) ?? -1, revision))
+      } else if (revision > (get().masks[docId]?.revision ?? -1)) {
+        void refreshMasks(docId)
+      }
       break
+    }
     case 'library.updated':
       set((s) => {
         const libraries = { ...s.libraries }
@@ -229,7 +328,11 @@ function onDocument(docId: string | null, doc: DocumentInfo | null) {
       const order = s.order.filter((id) => id !== docId)
       const activeId =
         s.activeId === docId ? (order[Math.min(index, order.length - 1)] ?? null) : s.activeId
-      return { documents, order, activeId }
+      const masks = { ...s.masks }
+      const integration = { ...s.integration }
+      delete masks[docId]
+      delete integration[docId]
+      return { documents, order, activeId, masks, integration }
     })
     return
   }
@@ -239,7 +342,9 @@ function onDocument(docId: string | null, doc: DocumentInfo | null) {
     order: s.order.includes(docId) ? s.order : [...s.order, docId],
     activeId: s.activeId ?? docId,
   }))
+  // new data (processing, signal): the same masks cover other values
   if (isNew) void refreshDocumentState(doc)
+  else void refreshMasks(docId)
 }
 
 /** Resolve when a job has finished (whatever its status). */

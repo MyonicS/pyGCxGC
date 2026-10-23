@@ -11,6 +11,7 @@ nav:
   - Resources:
       - notebooks/Quickstart_notebook.ipynb
       - examples.md
+      - pyGCxGC Studio (app): example_docs/gui/app.md
       - GCxGC-MS viewer: example_docs/gui/ms_viewer.md
       - Mask sets: example_docs/masks.md
   - Code Documentation: reference/ # keep me!

@@ -4,6 +4,11 @@ import { decodeArray } from './arrays'
 import type { Transport } from './transport'
 import type {
   DocumentInfo,
+  ExportRequest,
+  IntegrationResult,
+  MaskImport,
+  MaskUpdate,
+  Shape,
   FileProbe,
   FsListing,
   ImageHeader,
@@ -128,6 +133,92 @@ export class Api {
     return { header, data }
   }
 
+  // ---------------------------------------------------------------- masks
+  private masksPath(docId: string, rest = '') {
+    return `/api/documents/${enc(docId)}/masks${rest}`
+  }
+
+  createMask(docId: string, req: { name?: string; color?: string; category?: string } = {}) {
+    return this.transport.request<MaskSetInfo>('POST', this.masksPath(docId), { body: req })
+  }
+
+  updateMask(docId: string, maskId: string, changes: MaskUpdate) {
+    return this.transport.request<MaskSetInfo>('PATCH', this.masksPath(docId, `/${enc(maskId)}`), {
+      body: changes,
+    })
+  }
+
+  deleteMask(docId: string, maskId: string) {
+    return this.transport.request<MaskSetInfo>('DELETE', this.masksPath(docId, `/${enc(maskId)}`))
+  }
+
+  duplicateMask(docId: string, maskId: string) {
+    return this.transport.request<MaskSetInfo>(
+      'POST',
+      this.masksPath(docId, `/${enc(maskId)}/duplicate`),
+    )
+  }
+
+  addShape(docId: string, maskId: string, shape: Shape, mode: 'add' | 'subtract' = 'add') {
+    return this.transport.request<MaskSetInfo>(
+      'POST',
+      this.masksPath(docId, `/${enc(maskId)}/operations`),
+      { body: { shape, mode } },
+    )
+  }
+
+  replaceShape(docId: string, maskId: string, opId: string, shape: Shape) {
+    return this.transport.request<MaskSetInfo>(
+      'PUT',
+      this.masksPath(docId, `/${enc(maskId)}/operations/${enc(opId)}`),
+      { body: { shape } },
+    )
+  }
+
+  deleteShape(docId: string, maskId: string, opId: string) {
+    return this.transport.request<MaskSetInfo>(
+      'DELETE',
+      this.masksPath(docId, `/${enc(maskId)}/operations/${enc(opId)}`),
+    )
+  }
+
+  undoMasks(docId: string) {
+    return this.transport.request<MaskSetInfo>('POST', this.masksPath(docId, '/undo'))
+  }
+
+  redoMasks(docId: string) {
+    return this.transport.request<MaskSetInfo>('POST', this.masksPath(docId, '/redo'))
+  }
+
+  importMasks(docId: string, req: MaskImport) {
+    return this.transport.request<MaskSetInfo>('POST', this.masksPath(docId, '/import'), {
+      body: req,
+    })
+  }
+
+  integration(docId: string) {
+    return this.get<IntegrationResult>(`/api/documents/${enc(docId)}/integration`)
+  }
+
+  /** Integrate the masks on other files (spec INT-4); the job result holds the CSV. */
+  batchIntegrate(docId: string, paths: string[], path?: string) {
+    return this.transport.request<JobStarted>('POST', `/api/documents/${enc(docId)}/batch`, {
+      body: { paths, path },
+    })
+  }
+
+  /** Export as a download (browser); with `path`, the backend writes the file. */
+  exportFile(docId: string, req: ExportRequest) {
+    return this.transport.download('POST', `/api/documents/${enc(docId)}/export`, { body: req })
+  }
+
+  exportTo(docId: string, req: ExportRequest & { path: string }) {
+    return this.transport.request<{ path: string }>('POST', `/api/documents/${enc(docId)}/export`, {
+      body: req,
+    })
+  }
+
+  // ---------------------------------------------------------------- libraries
   libraries() {
     return this.get<LibraryInfo[]>('/api/libraries')
   }

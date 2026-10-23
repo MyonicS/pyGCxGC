@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { CommandPalette } from '@/shell/CommandPalette'
 import { OpenDialog } from '@/shell/OpenDialog'
+import { PathDialog } from '@/shell/PathDialog'
 import { SettingsDialog } from '@/shell/SettingsDialog'
 import { useShortcuts } from '@/shell/shortcuts'
 import { StatusBar } from '@/shell/StatusBar'
@@ -39,6 +40,7 @@ export function App() {
         <StatusBar />
       </div>
       <OpenDialog />
+      <PathDialog />
       <SettingsDialog />
       <CommandPalette />
       <Toaster position="bottom-right" closeButton />

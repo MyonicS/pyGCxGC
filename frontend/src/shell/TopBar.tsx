@@ -12,6 +12,7 @@ import {
   Monitor,
   Moon,
   MoreHorizontal,
+  PanelsTopLeft,
   Settings2,
   Sun,
   X,
@@ -28,6 +29,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -52,7 +56,7 @@ import { openCommandPalette } from './CommandPalette'
 import { openPath, showOpenDialog } from './openFile'
 import { openSettings } from './SettingsDialog'
 import { setTheme, useThemeSetting } from './theme'
-import { resetLayout } from './Workspace'
+import { PANELS, resetLayout, showPanel, type PanelId } from './Workspace'
 
 const NO_FILES: string[] = []
 
@@ -303,6 +307,18 @@ function AppMenu() {
           <Settings2 /> Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <PanelsTopLeft /> Panels
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {(Object.keys(PANELS) as PanelId[]).map((id) => (
+              <DropdownMenuItem key={id} onSelect={() => showPanel(id)}>
+                {PANELS[id].title}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuItem onSelect={() => resetLayout()}>
           <LayoutGrid /> Reset layout
         </DropdownMenuItem>

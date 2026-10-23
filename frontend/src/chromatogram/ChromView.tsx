@@ -1,11 +1,12 @@
 /**
  * The 2D chromatogram view (spec §5): WebGL image, axes, colour bar,
- * overlays, crosshair and the select / pan / zoom-box interactions.
+ * overlays, crosshair, the select / pan / zoom-box interactions and the mask
+ * drawing tools (spec MASK-4, MASK-6).
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { DocumentInfo } from '@/api/types'
+import type { DocumentInfo, Shape } from '@/api/types'
 import { colormapLut } from '@/lib/colormaps'
 import {
   constrainDomain,
@@ -22,12 +23,15 @@ import { notifyError } from '@/lib/notify'
 import { formatValue } from '@/lib/ticks'
 import { debounce } from '@/lib/utils'
 import { loadDetail, loadImage, useImages } from '@/store/images'
+import { drawShape, replaceShape, useActiveMaskId } from '@/store/masks'
 import { api, useSession } from '@/store/session'
 import {
   defaultDisplay,
   effectiveContrast,
   ensureDisplay,
+  isDrawTool,
   resetZoom,
+  selectShape,
   setCursor,
   setDomain,
   updateDisplay,
@@ -40,6 +44,19 @@ import { ColorBar } from './ColorBar'
 import { autoVmax, scanAt, valueAt, visibleRegion } from './imageMath'
 import { Overlays, nearestPeak, type PeakMarker } from './Overlays'
 import { ChromRenderer, WebGLUnavailableError } from './renderer'
+import { ShapeLayer, type Draft } from './ShapeLayer'
+import {
+  contains,
+  hitHandle,
+  isVector,
+  moveHandle,
+  rectShape,
+  screenDistance,
+  screenSize,
+  translate,
+  vertices,
+  type Point,
+} from './shapes'
 import { useMaskOverlay } from './useMaskOverlay'
 
 const MARGIN = { left: 62, right: 90, top: 12, bottom: 44 }
@@ -48,11 +65,28 @@ const COLORBAR = { gap: 14, width: 14 }
 const MIN_PIXELS = 1.5
 /** Pointer travel (px) that turns a click into a drag. */
 const DRAG_THRESHOLD = 4
+/** A click this close (px) to the first polygon vertex closes the polygon. */
+const CLOSE_RADIUS = 8
+/** Lasso points closer than this (px) are skipped. */
+const LASSO_STEP = 2
+const NEUTRAL = '#9ca3af'
 
 type Drag =
   | { kind: 'pan'; pointerId: number; x: number; y: number; domain: Domain }
   | { kind: 'zoom'; pointerId: number; x0: number; y0: number; x: number; y: number }
   | { kind: 'click'; pointerId: number; x: number; y: number; domain: Domain }
+  | { kind: 'rect'; pointerId: number; points: [Point, Point]; subtract: boolean }
+  | { kind: 'lasso'; pointerId: number; points: Point[]; subtract: boolean }
+  /** Dragging a handle (index >= 0) or the whole selected shape (index -1). */
+  | {
+      kind: 'edit'
+      pointerId: number
+      index: number
+      start: Point
+      original: Shape
+      shape: Shape
+      moved: boolean
+    }
 
 export function ChromView({ doc }: { doc: DocumentInfo }) {
   const docId = doc.id
@@ -63,6 +97,16 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const [hoverPeak, setHoverPeak] = useState<PeakMarker | null>(null)
+  const [hoverHandle, setHoverHandle] = useState(false)
+  const [polygonState, setPolygonState] = useState<{
+    points: Point[]
+    subtract: boolean
+    tool: string
+    docId: string
+  } | null>(null)
+  const [pendingState, setPendingState] = useState<
+    { shape: Shape; subtract: boolean; overlay: unknown }[]
+  >([])
   const [redraw, setRedraw] = useState(0)
 
   const settings = useSession((s) => s.settings)
@@ -79,9 +123,23 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   )
   const lock = useView((s) => s.lock)
   const tool = useView((s) => s.tool)
+  const subtractMode = useView((s) => s.subtract)
   const storedDomain = useView((s) => s.domains[docId])
   const shiftPreview = useView((s) => s.shiftPreview[docId])
+  const selected = useView((s) => (s.selectedShape?.docId === docId ? s.selectedShape : null))
   const overlay = useMaskOverlay(docId, masks, doc.revision)
+  const activeMaskId = useActiveMaskId(docId)
+  const activeMask = masks?.masks.find((m) => m.id === activeMaskId)
+  const drawColor = activeMask?.color ?? NEUTRAL
+
+  // the selected vector shape (an imported raster has no handles)
+  const selectedOp = useMemo(() => {
+    if (!selected) return null
+    const mask = masks?.masks.find((m) => m.id === selected.maskId)
+    const op = mask?.operations.find((o) => o.id === selected.opId)
+    const shape = op?.shape as Shape | undefined
+    return mask && shape && isVector(shape) ? { mask, shape } : null
+  }, [selected, masks])
 
   // ------------------------------------------------------------ data
   useEffect(() => {
@@ -99,6 +157,19 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
     // only when the image changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [image?.overview])
+
+  // a drawn shape stays outlined until Python's raster of it arrives (the
+  // overlay changes); switching tools or documents abandons a polygon
+  const pending = pendingState.filter((p) => p.overlay === overlay)
+  const polygon =
+    polygonState && polygonState.tool === tool && polygonState.docId === docId ? polygonState : null
+  const setPolygon = (points: Point[] | null, subtract = polygon?.subtract ?? false) =>
+    setPolygonState(points ? { points, subtract, tool, docId } : null)
+  const addPending = (shape: Shape, subtract: boolean) =>
+    setPendingState((p) => [
+      ...p.filter((q) => q.overlay === overlay),
+      { shape, subtract, overlay },
+    ])
 
   const full = image?.full
   const fullExtent = useMemo(() => (full ? fullDomain(full) : null), [full])
@@ -241,6 +312,9 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   }
   const inPlot = (x: number, y: number) =>
     x >= plot.left && x <= plot.left + plot.width && y >= plot.top && y <= plot.top + plot.height
+  /** Retention times of a container position. */
+  const rtAt = (x: number, y: number): Point =>
+    transform ? [transform.rt1(x - plot.left), transform.rt2(y - plot.top)] : [0, 0]
 
   // wheel: zoom about the cursor; over an axis only that axis (spec VIEW-9)
   useEffect(() => {
@@ -272,8 +346,7 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
       if (useView.getState().cursor?.docId === docId) setCursor(null)
       return
     }
-    const rt1 = transform.rt1(x - plot.left)
-    const rt2 = transform.rt2(y - plot.top)
+    const [rt1, rt2] = rtAt(x, y)
     const pixel = pixelAt(image.full, rt1, rt2)
     if (!pixel) {
       setCursor(null)
@@ -311,17 +384,71 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
     })
   }, [peaks, image])
 
+  /** Handle of the selected shape under a container position (-1: none). */
+  const handleAt = (x: number, y: number) =>
+    selectedOp && transform
+      ? hitHandle(vertices(selectedOp.shape), transform, x - plot.left, y - plot.top)
+      : -1
+
+  const commitPolygon = (points: Point[], subtract: boolean) => {
+    setPolygon(null)
+    if (points.length < 3 || !transform) return
+    const [w, h] = screenSize(transform, points)
+    if (w < 3 && h < 3) return
+    const shape: Shape = { type: 'polygon', vertices: points }
+    addPending(shape, subtract)
+    void drawShape(docId, shape, subtract ? 'subtract' : 'add')
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!domain) return
+    if (!domain || !transform) return
     const { x, y } = local(e)
     if (!inPlot(x, y)) return
     const middle = e.button === 1
     if (e.button !== 0 && !middle) return
     e.preventDefault()
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    if (middle || tool === 'pan') setDrag({ kind: 'pan', pointerId: e.pointerId, x, y, domain })
-    else if (tool === 'zoom') setDrag({ kind: 'zoom', pointerId: e.pointerId, x0: x, y0: y, x, y })
-    else setDrag({ kind: 'click', pointerId: e.pointerId, x, y, domain })
+    const id = e.pointerId
+    const p = rtAt(x, y)
+    const subtract = subtractMode || e.altKey
+    if (middle || tool === 'pan') {
+      setDrag({ kind: 'pan', pointerId: id, x, y, domain })
+      return
+    }
+    // editing the selected shape takes precedence over the tools
+    const handle = handleAt(x, y)
+    if (selectedOp && (handle >= 0 || (tool === 'select' && contains(selectedOp.shape, p)))) {
+      const shape = selectedOp.shape
+      setDrag({
+        kind: 'edit',
+        pointerId: id,
+        index: handle,
+        start: p,
+        original: shape,
+        shape,
+        moved: false,
+      })
+      return
+    }
+    if (tool === 'zoom') setDrag({ kind: 'zoom', pointerId: id, x0: x, y0: y, x, y })
+    else if (tool === 'rect') setDrag({ kind: 'rect', pointerId: id, points: [p, p], subtract })
+    else if (tool === 'lasso') setDrag({ kind: 'lasso', pointerId: id, points: [p], subtract })
+    else if (tool === 'polygon') {
+      if (!polygon) {
+        setPolygon([p], subtract)
+      } else if (
+        polygon.points.length >= 3 &&
+        screenDistance(transform, polygon.points[0], p) <= CLOSE_RADIUS
+      ) {
+        commitPolygon(polygon.points, polygon.subtract)
+      } else {
+        const last = polygon.points.at(-1)!
+        // the second click of a double click lands on the same spot
+        if (screenDistance(transform, last, p) >= 3) {
+          setPolygon([...polygon.points, p])
+        }
+      }
+    } else setDrag({ kind: 'click', pointerId: id, x, y, domain })
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -334,13 +461,38 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
           ? nearestPeak(peakMarkers, transform, x - plot.left, y - plot.top, 7)
           : null,
       )
+      setHoverHandle(handleAt(x, y) >= 0)
     }
     if (!drag || drag.pointerId !== e.pointerId) return
-    if (drag.kind === 'zoom') {
-      const cx = Math.min(Math.max(x, plot.left), plot.left + plot.width)
-      const cy = Math.min(Math.max(y, plot.top), plot.top + plot.height)
-      setDrag({ ...drag, x: cx, y: cy })
-      return
+    const p = rtAt(
+      Math.min(Math.max(x, plot.left), plot.left + plot.width),
+      Math.min(Math.max(y, plot.top), plot.top + plot.height),
+    )
+    switch (drag.kind) {
+      case 'zoom': {
+        const cx = Math.min(Math.max(x, plot.left), plot.left + plot.width)
+        const cy = Math.min(Math.max(y, plot.top), plot.top + plot.height)
+        setDrag({ ...drag, x: cx, y: cy })
+        return
+      }
+      case 'rect':
+        setDrag({ ...drag, points: [drag.points[0], p] })
+        return
+      case 'lasso': {
+        const last = drag.points.at(-1)!
+        if (transform && screenDistance(transform, last, p) >= LASSO_STEP) {
+          setDrag({ ...drag, points: [...drag.points, p] })
+        }
+        return
+      }
+      case 'edit': {
+        const shape =
+          drag.index >= 0
+            ? moveHandle(drag.original, drag.index, p)
+            : translate(drag.original, p[0] - drag.start[0], p[1] - drag.start[1])
+        setDrag({ ...drag, shape, moved: true })
+        return
+      }
     }
     const dx = x - drag.x
     const dy = y - drag.y
@@ -354,9 +506,9 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
-    if (!drag || drag.pointerId !== e.pointerId) return
+    if (!drag || drag.pointerId !== e.pointerId || !transform) return
     setDrag(null)
-    if (drag.kind === 'zoom' && transform) {
+    if (drag.kind === 'zoom') {
       const w = Math.abs(drag.x - drag.x0)
       const h = Math.abs(drag.y - drag.y0)
       if (w < DRAG_THRESHOLD && h < DRAG_THRESHOLD) return
@@ -369,14 +521,44 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
         y0: h < DRAG_THRESHOLD ? d.y0 : Math.min(...ys),
         y1: h < DRAG_THRESHOLD ? d.y1 : Math.max(...ys),
       })
+    } else if (drag.kind === 'rect' || drag.kind === 'lasso') {
+      const [w, h] = screenSize(transform, drag.points)
+      if (w < 3 || h < 3 || (drag.kind === 'lasso' && drag.points.length < 3)) return
+      const shape: Shape =
+        drag.kind === 'rect'
+          ? rectShape(drag.points[0], drag.points[1])
+          : { type: 'lasso', vertices: drag.points }
+      addPending(shape, drag.subtract)
+      void drawShape(docId, shape, drag.subtract ? 'subtract' : 'add')
+    } else if (drag.kind === 'edit') {
+      if (drag.moved && selected) {
+        addPending(drag.shape, false)
+        void replaceShape(docId, selected.maskId, selected.opId, drag.shape)
+      }
     } else if (drag.kind === 'click') {
-      void selectAt(local(e))
+      clickAt(local(e))
     }
   }
 
-  const selectAt = async ({ x, y }: { x: number; y: number }) => {
-    if (doc.kind !== 'ms' || !transform || !image) return
-    const pixel = pixelAt(image.full, transform.rt1(x - plot.left), transform.rt2(y - plot.top))
+  /** A click: select the topmost shape of the active mask under it, else a point (MS). */
+  const clickAt = ({ x, y }: { x: number; y: number }) => {
+    const p = rtAt(x, y)
+    if (activeMask && display.showMasks) {
+      const hit = [...activeMask.operations]
+        .reverse()
+        .find((op) => isVector(op.shape as Shape) && contains(op.shape as Shape, p))
+      if (hit) {
+        selectShape({ docId, maskId: activeMask.id, opId: hit.id })
+        return
+      }
+    }
+    if (selected) selectShape(null)
+    void selectPoint(p)
+  }
+
+  const selectPoint = async ([rt1, rt2]: Point) => {
+    if (doc.kind !== 'ms' || !image) return
+    const pixel = pixelAt(image.full, rt1, rt2)
     if (!pixel) return
     try {
       await api().select(docId, {
@@ -390,15 +572,28 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
     }
   }
 
-  // Esc cancels a zoom box
+  // keys while drawing: Enter closes a polygon, Backspace removes its last
+  // vertex, Esc cancels the gesture or the selection
   useEffect(() => {
-    if (!drag || drag.kind !== 'zoom') return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDrag(null)
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (e.key === 'Escape') {
+        if (drag) setDrag(null)
+        else if (polygon) setPolygon(null)
+        else if (selected) selectShape(null)
+        else return
+      } else if (e.key === 'Enter' && polygon) {
+        commitPolygon(polygon.points, polygon.subtract)
+      } else if (e.key === 'Backspace' && polygon) {
+        setPolygon(polygon.points.length > 1 ? polygon.points.slice(0, -1) : null)
+      } else return
+      e.preventDefault()
+      e.stopPropagation()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [drag])
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  })
 
   const cursorValue = useView((s) => (s.cursor?.docId === docId ? s.cursor : null))
   const scale = {
@@ -410,11 +605,22 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   const cursorClass =
     drag?.kind === 'pan'
       ? 'cursor-grabbing'
-      : tool === 'pan'
-        ? 'cursor-grab'
-        : tool === 'zoom'
-          ? 'cursor-zoom-in'
-          : 'cursor-crosshair'
+      : drag?.kind === 'edit' || hoverHandle
+        ? 'cursor-move'
+        : tool === 'pan'
+          ? 'cursor-grab'
+          : tool === 'zoom'
+            ? 'cursor-zoom-in'
+            : 'cursor-crosshair'
+
+  let draft: Draft | null = null
+  if (drag?.kind === 'rect' || drag?.kind === 'lasso') {
+    draft = { points: drag.points, kind: drag.kind, subtract: drag.subtract }
+  } else if (polygon) {
+    draft = { points: polygon.points, kind: 'polygon', subtract: polygon.subtract }
+  }
+  const editedShape = drag?.kind === 'edit' ? drag.shape : (selectedOp?.shape ?? null)
+  const showCrosshair = hover && !drag && (tool === 'select' || isDrawTool(tool))
 
   return (
     <div
@@ -432,7 +638,10 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
       }}
       onDoubleClick={(e) => {
         const { x, y } = local(e)
-        if (inPlot(x, y)) resetZoom(docId)
+        if (!inPlot(x, y)) return
+        if (tool === 'polygon') {
+          if (polygon) commitPolygon(polygon.points, polygon.subtract)
+        } else if (!isDrawTool(tool)) resetZoom(docId)
       }}
     >
       <div
@@ -467,13 +676,27 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
               hoverPeak={hoverPeak}
               selection={selection ?? null}
             />
-            {hover && tool === 'select' && !drag && (
+            <ShapeLayer
+              plot={plot}
+              transform={transform}
+              color={drawColor}
+              draft={draft}
+              cursor={polygon && hover ? rtAt(hover.x, hover.y) : null}
+              pending={pending}
+              selected={
+                editedShape && selectedOp
+                  ? { shape: editedShape, color: selectedOp.mask.color }
+                  : null
+              }
+            />
+            {showCrosshair && (
               <g>
                 {[0, 1].map((halo) => (
                   <g
                     key={halo}
                     className={halo ? 'stroke-plot-crosshair' : 'stroke-plot-halo'}
                     strokeWidth={halo ? 1 : 3}
+                    opacity={isDrawTool(tool) ? 0.6 : 1}
                   >
                     <line
                       x1={Math.round(hover.x) + 0.5}

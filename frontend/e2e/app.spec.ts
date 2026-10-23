@@ -6,62 +6,12 @@
 
 import { resolve } from 'node:path'
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-const TOKEN = 'e2e'
-const FID = resolve('../example_data/example_chromatograms/Example_FID.csv')
-const MS = resolve('e2e/.data/run.cdf')
-const headers = { Authorization: `Bearer ${TOKEN}` }
-
-async function api<T = unknown>(
-  request: APIRequestContext,
-  method: string,
-  path: string,
-  data?: unknown,
-): Promise<T> {
-  const r = await request.fetch(path, { method, headers, data })
-  expect(r.ok(), `${method} ${path}: ${r.status()} ${await r.text()}`).toBeTruthy()
-  return (r.status() === 204 ? undefined : await r.json()) as T
-}
-
-/** Open a file through the API and wait for its job. */
-async function openDocument(request: APIRequestContext, path: string, params = {}) {
-  const { job } = await api<{ job: { id: string } }>(request, 'POST', '/api/documents', {
-    path,
-    params,
-  })
-  for (;;) {
-    const j = await api<{ status: string; result: { document_id: string } }>(
-      request,
-      'GET',
-      `/api/jobs/${job.id}`,
-    )
-    if (j.status === 'done') return j.result.document_id
-    expect(['queued', 'running']).toContain(j.status)
-    await new Promise((r) => setTimeout(r, 100))
-  }
-}
-
-async function openApp(page: Page) {
-  await page.goto(`/?token=${TOKEN}`)
-  await expect(page.getByLabel('Backend open')).toBeVisible()
-}
-
-async function imageShown(page: Page) {
-  await expect(page.getByTestId('chromatogram-canvas')).toBeVisible()
-  await expect(page.getByText('Loading image…')).toHaveCount(0)
-  await page.waitForTimeout(300) // let the first frame and the colour bar settle
-}
+import { api, FID, headers, imageShown, MS, openApp, openDocument, resetSession } from './helpers'
 
 test.beforeEach(async ({ request }) => {
-  const docs = await api<{ id: string }[]>(request, 'GET', '/api/documents')
-  for (const d of docs) await api(request, 'DELETE', `/api/documents/${d.id}`)
-  await api(request, 'PUT', '/api/settings', {
-    theme: 'system',
-    recent_files: [],
-    fid: { modulation_time: null },
-    ui: { layouts: { fid: null, ms: null } },
-  })
+  await resetSession(request)
 })
 
 test('opens the example FID through the file browser', async ({ page }) => {

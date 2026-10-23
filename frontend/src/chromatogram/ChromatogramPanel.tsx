@@ -1,26 +1,80 @@
 /** Chromatogram panel: toolbar and view of the active document. */
 
-import { Hand, Layers, MousePointer2, ScanSearch, Shrink, Target } from 'lucide-react'
+import {
+  ChevronDown,
+  Hand,
+  Lasso,
+  Layers,
+  MousePointer2,
+  Pentagon,
+  Plus,
+  ScanSearch,
+  Shrink,
+  Square,
+  SquareMinus,
+  Target,
+} from 'lucide-react'
 import { useMemo } from 'react'
 
 import type { DocumentInfo } from '@/api/types'
 
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Toggle } from '@/components/ui/toggle'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Kbd } from '@/components/Kbd'
 import { useImages } from '@/store/images'
+import { newMask, useActiveMaskId, useMasks } from '@/store/masks'
 import { useActiveDocument, useSession } from '@/store/session'
-import { defaultDisplay, resetZoom, setTool, updateDisplay, useView, type Tool } from '@/store/view'
+import {
+  defaultDisplay,
+  isDrawTool,
+  resetZoom,
+  setActiveMask,
+  setSubtract,
+  setTool,
+  updateDisplay,
+  useView,
+  type Tool,
+} from '@/store/view'
 
 import { ChromView } from './ChromView'
 import { DisplayPopover } from './DisplayPopover'
 
-const TOOLS: { tool: Tool; label: string; key: string; icon: React.ReactNode }[] = [
+interface ToolInfo {
+  tool: Tool
+  label: string
+  key: string
+  icon: React.ReactNode
+}
+
+const VIEW_TOOLS: ToolInfo[] = [
   { tool: 'select', label: 'Select / inspect', key: 'V', icon: <MousePointer2 /> },
   { tool: 'pan', label: 'Pan', key: 'H', icon: <Hand /> },
   { tool: 'zoom', label: 'Zoom box', key: 'Z', icon: <ScanSearch /> },
+]
+
+/** Mask drawing tools (spec MASK-4). */
+const DRAW_TOOLS: ToolInfo[] = [
+  { tool: 'rect', label: 'Rectangle: drag', key: 'R', icon: <Square /> },
+  { tool: 'lasso', label: 'Lasso: drag freehand', key: 'L', icon: <Lasso /> },
+  {
+    tool: 'polygon',
+    label: 'Polygon: click vertices, double click or Enter closes, Esc cancels',
+    key: 'P',
+    icon: <Pentagon />,
+  },
 ]
 
 export function ChromatogramPanel() {
@@ -44,28 +98,9 @@ export function ChromatogramPanel() {
   return (
     <div className="flex h-full flex-col bg-panel">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b px-2">
-        <ToggleGroup
-          type="single"
-          size="sm"
-          spacing={0}
-          variant="outline"
-          value={tool}
-          onValueChange={(v) => v && setTool(v as Tool)}
-          aria-label="Tool"
-        >
-          {TOOLS.map((t) => (
-            <Tooltip key={t.tool}>
-              <TooltipTrigger asChild>
-                <ToggleGroupItem value={t.tool} aria-label={t.label} data-testid={`tool-${t.tool}`}>
-                  {t.icon}
-                </ToggleGroupItem>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t.label} <Kbd>{t.key}</Kbd>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </ToggleGroup>
+        <Tools tools={VIEW_TOOLS} tool={tool} label="View tool" />
+        <Tools tools={DRAW_TOOLS} tool={tool} label="Mask drawing tool" />
+        {isDrawTool(tool) && <DrawingTarget docId={doc.id} />}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -112,6 +147,98 @@ export function ChromatogramPanel() {
         <ChromView doc={doc} />
       </div>
     </div>
+  )
+}
+
+function Tools({ tools, tool, label }: { tools: ToolInfo[]; tool: Tool; label: string }) {
+  return (
+    <ToggleGroup
+      type="single"
+      size="sm"
+      spacing={0}
+      variant="outline"
+      value={tools.some((t) => t.tool === tool) ? tool : ''}
+      onValueChange={(v) => v && setTool(v as Tool)}
+      aria-label={label}
+    >
+      {tools.map((t) => (
+        <Tooltip key={t.tool}>
+          <TooltipTrigger asChild>
+            <ToggleGroupItem value={t.tool} aria-label={t.label} data-testid={`tool-${t.tool}`}>
+              {t.icon}
+            </ToggleGroupItem>
+          </TooltipTrigger>
+          <TooltipContent>
+            {t.label} <Kbd>{t.key}</Kbd>
+          </TooltipContent>
+        </Tooltip>
+      ))}
+    </ToggleGroup>
+  )
+}
+
+/** Subtract toggle and the mask new shapes go into (spec MASK-3/4). */
+function DrawingTarget({ docId }: { docId: string }) {
+  const subtract = useView((s) => s.subtract)
+  const masks = useMasks(docId)
+  const activeId = useActiveMaskId(docId)
+  const active = masks.find((m) => m.id === activeId)
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Toggle
+            size="sm"
+            variant="outline"
+            pressed={subtract}
+            onPressedChange={setSubtract}
+            aria-label="Subtract"
+            data-testid="subtract"
+          >
+            <SquareMinus />
+          </Toggle>
+        </TooltipTrigger>
+        <TooltipContent>
+          Subtract from the mask (or hold <Kbd>Alt</Kbd> while drawing)
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="max-w-44"
+            aria-label="Mask to draw into"
+            data-testid="draw-target"
+          >
+            <span
+              className="size-2.5 shrink-0 rounded-full border border-current/30"
+              style={{ background: active?.color ?? 'transparent' }}
+            />
+            <span className="truncate">{active ? active.name : 'New mask'}</span>
+            <ChevronDown />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuLabel>Draw into</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={activeId ?? ''}
+            onValueChange={(id) => setActiveMask(docId, id)}
+          >
+            {masks.map((m) => (
+              <DropdownMenuRadioItem key={m.id} value={m.id}>
+                <span className="size-2.5 rounded-full" style={{ background: m.color }} />
+                {m.name}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+          {masks.length > 0 && <DropdownMenuSeparator />}
+          <DropdownMenuItem onSelect={() => void newMask(docId)}>
+            <Plus /> New mask
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
   )
 }
 

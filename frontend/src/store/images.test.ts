@@ -91,6 +91,7 @@ const transport: Transport = {
       error: null,
     } as T
   },
+  download: () => Promise.reject(new Error('not used')),
   subscribe: () => () => undefined,
 }
 

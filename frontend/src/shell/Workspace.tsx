@@ -18,12 +18,14 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { DocumentKind } from '@/api/types'
 import { ChromatogramPanel } from '@/chromatogram/ChromatogramPanel'
 import { debounce } from '@/lib/utils'
+import { IntegrationPanel } from '@/panels/IntegrationPanel'
+import { MasksPanel } from '@/panels/MasksPanel'
 import { PlaceholderPanel } from '@/panels/PlaceholderPanel'
 import { ProcessingPanel } from '@/panels/ProcessingPanel'
 import { updateSettings, useSession } from '@/store/session'
 
 /** Bump when the panels or default layouts change: saved layouts are dropped. */
-const LAYOUT_VERSION = 1
+const LAYOUT_VERSION = 2
 
 const theme: DockviewTheme = {
   name: 'pygcxgc',
@@ -35,22 +37,8 @@ const theme: DockviewTheme = {
 export const PANELS = {
   chromatogram: { title: 'Chromatogram', component: () => <ChromatogramPanel /> },
   processing: { title: 'Processing', component: () => <ProcessingPanel /> },
-  masks: {
-    title: 'Masks',
-    component: () => (
-      <PlaceholderPanel milestone={2}>
-        Mask list with drawing, visibility, rename, duplicate and undo.
-      </PlaceholderPanel>
-    ),
-  },
-  integration: {
-    title: 'Integration',
-    component: () => (
-      <PlaceholderPanel milestone={2}>
-        Volumes per mask, % of total and unassigned.
-      </PlaceholderPanel>
-    ),
-  },
+  masks: { title: 'Masks', component: () => <MasksPanel /> },
+  integration: { title: 'Integration', component: () => <IntegrationPanel /> },
   spectrum: {
     title: 'Spectrum',
     component: () => (
@@ -85,7 +73,17 @@ export type PanelId = keyof typeof PANELS
 
 export const LAYOUT_PANELS: Record<DocumentKind, PanelId[]> = {
   fid: ['chromatogram', 'masks', 'processing', 'integration'],
-  ms: ['chromatogram', 'spectrum', 'processing', 'match', 'hits', 'peaks', 'libraries'],
+  ms: [
+    'chromatogram',
+    'spectrum',
+    'processing',
+    'match',
+    'hits',
+    'peaks',
+    'libraries',
+    'masks',
+    'integration',
+  ],
 }
 
 const components = Object.fromEntries(
@@ -137,6 +135,9 @@ export function buildDefaultLayout(api: DockviewApi, kind: DocumentKind) {
     const hits = add(api, 'hits', { referencePanel: 'match', direction: 'below' })
     add(api, 'peaks', { referencePanel: 'hits', direction: 'within' })
     add(api, 'libraries', { referencePanel: 'hits', direction: 'within' })
+    // masks work on MS documents too (spec MASK-8)
+    add(api, 'masks', { referencePanel: 'hits', direction: 'within' })
+    add(api, 'integration', { referencePanel: 'hits', direction: 'within' })
     spectrum.api.setActive()
     hits.api.setActive()
     spectrum.group.api.setSize({ width: Math.round(width / 3), height: Math.round(height * 0.32) })
