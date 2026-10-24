@@ -23,6 +23,7 @@ import type {
   OpenDocumentRequest,
   PeakTable,
   ProcessingParams,
+  ProjectSaved,
   RasterHeader,
   SelectionInfo,
   SelectRequest,
@@ -69,6 +70,38 @@ export class Api {
 
   probe(path: string) {
     return this.get<FileProbe>('/api/fs/probe', { path })
+  }
+
+  setActiveDocument(docId: string) {
+    return this.transport.request<void>('PUT', '/api/session/active', {
+      body: { document_id: docId },
+    })
+  }
+
+  setView(docId: string, view: Record<string, unknown> | null) {
+    return this.transport.request<void>('PUT', `/api/documents/${enc(docId)}/view`, {
+      body: view,
+    })
+  }
+
+  openLogFolder() {
+    return this.transport.request<void>('POST', '/api/logs/open')
+  }
+
+  saveProject(path?: string, ui?: Record<string, unknown>) {
+    return this.transport.request<ProjectSaved>('POST', '/api/project/save', {
+      body: { path: path ?? null, ui: ui ?? null },
+    })
+  }
+
+  openProject(path: string, replace = true) {
+    return this.transport.request<JobStarted>('POST', '/api/project/open', {
+      body: { path, replace },
+    })
+  }
+
+  closeProject() {
+    return this.transport.request<void>('POST', '/api/project/close')
   }
 
   cancelJob(jobId: string) {

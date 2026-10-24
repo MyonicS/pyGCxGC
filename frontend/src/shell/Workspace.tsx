@@ -1,7 +1,9 @@
 /**
  * dockview workspace (spec SHELL-2). The layout depends on the kind of the
  * active document (FID or MS), persists per kind in the settings, and
- * *Reset layout* restores the defaults.
+ * *Reset layout* restores the defaults. Inline in a notebook
+ * (`?layout=compact`, spec NB-1) the default layouts are compact and saved
+ * separately.
  */
 
 import {
@@ -30,6 +32,14 @@ import { updateSettings, useSession } from '@/store/session'
 
 /** Bump when the panels or default layouts change: saved layouts are dropped. */
 const LAYOUT_VERSION = 3
+
+/** The app is shown inline in a notebook (spec NB-1). */
+export const COMPACT =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('layout') === 'compact'
+
+/** Settings key of the saved layout. */
+export const layoutKey = (kind: DocumentKind) => (COMPACT ? `compact-${kind}` : kind)
 
 const theme: DockviewTheme = {
   name: 'pygcxgc',
@@ -95,12 +105,40 @@ function add(
   })
 }
 
+/**
+ * Compact layouts for small iframes: the chromatogram and one or two tabbed
+ * groups.
+ */
+function buildCompactLayout(api: DockviewApi, kind: DocumentKind, width: number) {
+  if (kind === 'fid') {
+    const masks = add(api, 'masks', { referencePanel: 'chromatogram', direction: 'right' })
+    add(api, 'integration', { referencePanel: 'masks', direction: 'within' })
+    add(api, 'processing', { referencePanel: 'masks', direction: 'within' })
+    masks.api.setActive()
+    masks.group.api.setSize({ width: Math.round(width * 0.38) })
+  } else {
+    const spectrum = add(api, 'spectrum', { referencePanel: 'chromatogram', direction: 'right' })
+    add(api, 'match', { referencePanel: 'spectrum', direction: 'within' })
+    const hits = add(api, 'hits', { referencePanel: 'spectrum', direction: 'below' })
+    for (const id of ['peaks', 'masks', 'integration', 'libraries', 'processing'] as const)
+      add(api, id, { referencePanel: 'hits', direction: 'within' })
+    spectrum.api.setActive()
+    hits.api.setActive()
+    spectrum.group.api.setSize({ width: Math.round(width * 0.4) })
+  }
+  api.getPanel('chromatogram')?.api.setActive()
+}
+
 /** Default layouts (spec §6 and §7). */
 export function buildDefaultLayout(api: DockviewApi, kind: DocumentKind) {
   api.clear()
   const width = api.width || 1200
   const height = api.height || 800
   add(api, 'chromatogram')
+  if (COMPACT) {
+    buildCompactLayout(api, kind, width)
+    return
+  }
   if (kind === 'fid') {
     // chromatogram ~70 %; Masks (with Processing as a tab) over Integration
     const masks = add(api, 'masks', { referencePanel: 'chromatogram', direction: 'right' })
@@ -133,7 +171,7 @@ interface SavedLayout {
 }
 
 function loadLayout(api: DockviewApi, kind: DocumentKind): boolean {
-  const text = useSession.getState().settings.ui?.layouts?.[kind]
+  const text = useSession.getState().settings.ui?.layouts?.[layoutKey(kind)]
   if (!text) return false
   try {
     const saved = JSON.parse(text) as SavedLayout
@@ -171,7 +209,7 @@ export function Workspace({ kind }: { kind: DocumentKind }) {
     () =>
       debounce((k: DocumentKind, api: DockviewApi) => {
         const saved: SavedLayout = { version: LAYOUT_VERSION, layout: api.toJSON() }
-        void updateSettings({ ui: { layouts: { [k]: JSON.stringify(saved) } } })
+        void updateSettings({ ui: { layouts: { [layoutKey(k)]: JSON.stringify(saved) } } })
       }, 800),
     [],
   )
@@ -190,11 +228,22 @@ export function Workspace({ kind }: { kind: DocumentKind }) {
     if (!api || kindRef.current === kind) return
     save.cancel()
     const saved: SavedLayout = { version: LAYOUT_VERSION, layout: api.toJSON() }
-    void updateSettings({ ui: { layouts: { [kindRef.current]: JSON.stringify(saved) } } })
+    void updateSettings({
+      ui: { layouts: { [layoutKey(kindRef.current)]: JSON.stringify(saved) } },
+    })
     kindRef.current = kind
     current = { api, kind }
     if (!loadLayout(api, kind)) buildDefaultLayout(api, kind)
   }, [kind, save])
+
+  // an opened project brings its layouts
+  const projectOpened = useSession((s) => s.projectOpened)
+  useEffect(() => {
+    const api = apiRef.current
+    if (!api || projectOpened === 0) return
+    save.cancel()
+    if (!loadLayout(api, kindRef.current)) buildDefaultLayout(api, kindRef.current)
+  }, [projectOpened, save])
 
   useEffect(
     () => () => {

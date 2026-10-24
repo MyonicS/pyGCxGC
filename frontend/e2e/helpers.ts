@@ -68,8 +68,7 @@ export async function imageShown(page: Page) {
 }
 
 export async function resetSession(request: APIRequestContext) {
-  const docs = await api<{ id: string }[]>(request, 'GET', '/api/documents')
-  for (const d of docs) await api(request, 'DELETE', `/api/documents/${d.id}`)
+  await api(request, 'POST', '/api/project/close') // closes the documents too
   const libs = await api<{ id: string }[]>(request, 'GET', '/api/libraries')
   for (const l of libs) await api(request, 'DELETE', `/api/libraries/${l.id}`)
   await api(request, 'PUT', '/api/settings', {
@@ -80,7 +79,10 @@ export async function resetSession(request: APIRequestContext) {
     ms: { snap: true, n_average: 3, peak_snr: 10 },
     search: { mz_power: 0.5, int_power: 0.5, n_hits: 20, min_match: 0, mz_min: null, mz_max: null },
     structures: { online: 'ask' },
-    ui: { layouts: { fid: null, ms: null }, last_folder: null },
+    ui: {
+      layouts: { fid: null, ms: null, 'compact-fid': null, 'compact-ms': null },
+      last_folder: null,
+    },
   })
 }
 

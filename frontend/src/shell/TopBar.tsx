@@ -6,15 +6,18 @@
 import {
   ChevronDown,
   Command,
+  FileText,
   FolderOpen,
   LayoutGrid,
   Monitor,
   Moon,
   MoreHorizontal,
   PanelsTopLeft,
+  Save,
   Settings2,
   Sun,
   X,
+  XSquare,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -36,15 +39,22 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ThemeSetting } from '@/api/types'
 import { basename, cn } from '@/lib/utils'
-import { closeDocument, moveDocument, setActiveDocument, useSession } from '@/store/session'
+import {
+  closeDocument,
+  moveDocument,
+  openLogFolder,
+  setActiveDocument,
+  useSession,
+} from '@/store/session'
 
 import { LibraryPicker } from '@/ms/LibraryPicker'
 
 import { openCommandPalette } from './CommandPalette'
 import { openPath, showOpenDialog } from './openFile'
+import { closeProject, isProjectPath, saveProject } from './project'
 import { openSettings } from './SettingsDialog'
 import { setTheme, useThemeSetting } from './theme'
-import { PANELS, resetLayout, showPanel, type PanelId } from './Workspace'
+import { COMPACT, PANELS, resetLayout, showPanel, type PanelId } from './Workspace'
 
 const NO_FILES: string[] = []
 
@@ -57,8 +67,9 @@ export function TopBar() {
       <div className="flex items-center gap-1.5 pr-2 pl-1 select-none" aria-label="pyGCxGC Studio">
         <Logo />
         <span className="text-sm font-semibold tracking-tight">pyGCxGC</span>
-        <span className="text-sm text-muted-foreground">Studio</span>
+        {!COMPACT && <span className="text-sm text-muted-foreground">Studio</span>}
       </div>
+      <ProjectName />
       <OpenMenu />
       <DocumentTabs />
       <div className="ml-auto flex items-center gap-1">
@@ -97,7 +108,7 @@ function OpenMenu() {
             Open
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Open a chromatogram ({mod}O)</TooltipContent>
+        <TooltipContent>Open a chromatogram or project ({mod}O)</TooltipContent>
       </Tooltip>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -115,6 +126,7 @@ function OpenMenu() {
           {recent.length === 0 && <DropdownMenuItem disabled>No recent files</DropdownMenuItem>}
           {recent.map((path) => (
             <DropdownMenuItem key={path} onSelect={() => void openPath(path)} title={path}>
+              {isProjectPath(path) && <FileText className="text-primary" />}
               <span className="truncate">{basename(path)}</span>
               <span className="ml-auto max-w-48 truncate text-xs text-muted-foreground">
                 {path}
@@ -124,6 +136,29 @@ function OpenMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
+  )
+}
+
+/** The project's name; a click saves it. */
+function ProjectName() {
+  const project = useSession((s) => s.project)
+  if (!project) return null
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="max-w-40 truncate rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => void saveProject()}
+          data-testid="project-name"
+        >
+          {project.name}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        Project {project.path} – click to save ({mod}S)
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -236,6 +271,8 @@ function ThemeMenu() {
 }
 
 function AppMenu() {
+  const hasDocuments = useSession((s) => s.order.length > 0)
+  const project = useSession((s) => s.project)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -243,7 +280,18 @@ function AppMenu() {
           <MoreHorizontal />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuItem disabled={!hasDocuments} onSelect={() => void saveProject()}>
+          <Save /> Save project
+          <DropdownMenuShortcut>{mod}S</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!hasDocuments} onSelect={() => void saveProject(true)}>
+          <Save /> Save project as…
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!hasDocuments && !project} onSelect={() => void closeProject()}>
+          <XSquare /> Close all
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => openCommandPalette()}>
           <Command /> Command palette
           <DropdownMenuShortcut>{mod}K</DropdownMenuShortcut>
@@ -266,6 +314,13 @@ function AppMenu() {
         </DropdownMenuSub>
         <DropdownMenuItem onSelect={() => resetLayout()}>
           <LayoutGrid /> Reset layout
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+          Help
+        </DropdownMenuLabel>
+        <DropdownMenuItem onSelect={() => void openLogFolder()}>
+          <FileText /> Open log folder
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

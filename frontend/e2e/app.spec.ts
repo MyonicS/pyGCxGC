@@ -77,8 +77,11 @@ test('display changes never call the backend', async ({ page, request }) => {
   const box = (await page.getByTestId('chromatogram-canvas').boundingBox())!
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.6)
   for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -120)
-  await page.waitForTimeout(300)
-  expect(calls).toEqual([])
+  await page.waitForTimeout(1000)
+  // only the view state is copied to the backend (debounced, for projects)
+  const views = calls.filter((c) => c.startsWith('PUT') && c.endsWith('/view'))
+  expect(calls.filter((c) => !views.includes(c))).toEqual([])
+  expect(views.length).toBeLessThanOrEqual(2)
 })
 
 test('zoom box, axis zoom and reset', async ({ page, request }) => {

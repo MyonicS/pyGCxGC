@@ -23,7 +23,13 @@ import {
   setPointSettings,
   usePointSettings,
 } from '@/store/ms'
-import { closeDocument, setActiveDocument, setLibraryActive, useSession } from '@/store/session'
+import {
+  closeDocument,
+  openLogFolder,
+  setActiveDocument,
+  setLibraryActive,
+  useSession,
+} from '@/store/session'
 import {
   INTERPOLATION_LABELS,
   INTERPOLATIONS,
@@ -33,6 +39,7 @@ import {
 } from '@/store/view'
 
 import { openPath, showOpenDialog } from './openFile'
+import { closeProject, saveProject } from './project'
 import { openSettings } from './SettingsDialog'
 import { setTheme } from './theme'
 import { mod } from './TopBar'
@@ -53,6 +60,7 @@ export function CommandPalette() {
   const activeId = useSession((s) => s.activeId)
   const libraries = useSession((s) => s.libraries)
   const recent = useSession((s) => s.settings.recent_files ?? NO_FILES)
+  const project = useSession((s) => s.project)
   const activeDoc = activeId ? documents[activeId] : undefined
   const hasSelection = useSession((s) => Boolean(activeId && s.selections[activeId]))
   const { snap } = usePointSettings()
@@ -77,8 +85,23 @@ export function CommandPalette() {
           <CommandEmpty>No matching command.</CommandEmpty>
           <CommandGroup heading="File">
             <CommandItem onSelect={run(() => showOpenDialog())}>
-              Open file…<CommandShortcut>{mod}O</CommandShortcut>
+              Open file or project…<CommandShortcut>{mod}O</CommandShortcut>
             </CommandItem>
+            {order.length > 0 && (
+              <>
+                <CommandItem onSelect={run(() => void saveProject())}>
+                  Save project<CommandShortcut>{mod}S</CommandShortcut>
+                </CommandItem>
+                <CommandItem onSelect={run(() => void saveProject(true))}>
+                  Save project as…<CommandShortcut>{mod}Shift+S</CommandShortcut>
+                </CommandItem>
+              </>
+            )}
+            {(project || order.length > 0) && (
+              <CommandItem onSelect={run(() => void closeProject())}>
+                Close all{project ? ` (project ${project.name})` : ''}
+              </CommandItem>
+            )}
             {recent.map((path) => (
               <CommandItem
                 key={path}
@@ -194,6 +217,7 @@ export function CommandPalette() {
             <CommandItem onSelect={run(() => setTheme('system'))}>Theme: system</CommandItem>
             <CommandItem onSelect={run(() => resetLayout())}>Reset layout</CommandItem>
             <CommandItem onSelect={run(() => openSettings())}>Settings…</CommandItem>
+            <CommandItem onSelect={run(() => void openLogFolder())}>Open log folder</CommandItem>
           </CommandGroup>
         </CommandList>
       </Command>

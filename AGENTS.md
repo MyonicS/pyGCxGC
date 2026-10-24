@@ -12,9 +12,10 @@ uv pip install -e .               # needed for the console scripts
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src/pyGCxGC/ms src/pyGCxGC/app src/pyGCxGC/masks.py \
     src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py tests/test_masks.py \
-    tests/test_app.py tests/test_structures.py tests/synthetic.py
+    tests/test_app.py tests/test_notebook.py tests/test_structures.py tests/synthetic.py
 .venv/bin/ruff format <files you touched>
-.venv/bin/pygcxgc [file] [-l LIBRARY] [--open]   # = python -m pyGCxGC.app; prints READY <port> and the URL with the token
+.venv/bin/pygcxgc [file|project.gcxgc] [-l LIBRARY]   # = python -m pyGCxGC.app; opens a pywebview window or the browser
+.venv/bin/pygcxgc --headless                        # serve only: prints READY <port> and the URL with the token
 ```
 
 Frontend (`frontend/`, pnpm, Node >= 22):
@@ -50,16 +51,20 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/ms/structures.py` | Structure resolver: library identifiers, then opt-in PubChem (`PubChem`, rate limited), SQLite `StructureCache`, RDKit `depict_svg` |
 | `src/pyGCxGC/gui/ms_viewer.py` | Tk GCxGC-MS viewer (`pygcxgc-msviewer`, `pyGCxGC.launch_ms_viewer`); drawing only, all logic goes through a `Session` |
 | `src/pyGCxGC/app/session.py` | `Session`: documents, jobs, events, libraries, selection/search, peaks, masks with undo, export. Core dependencies only |
-| `src/pyGCxGC/app/server.py`, `schemas.py`, `arrays.py` | FastAPI routes and WebSocket, pydantic API models, binary array format (`app` extra) |
+| `src/pyGCxGC/app/session.py` (projects) | `save_project`/`open_project`/`Session.load`: `*.gcxgc` JSON with relative paths, never data |
+| `src/pyGCxGC/app/server.py`, `schemas.py`, `arrays.py` | FastAPI routes and WebSocket, pydantic API models, binary array format (`app` extra); `ServerThread` runs the server in a background thread |
+| `src/pyGCxGC/app/viewer.py` | `gcgc.view` for notebooks: `Viewer` (live state, `select`, `set_signal`, `on`) and `LiveMasks` |
+| `src/pyGCxGC/app/paths.py` | Config/cache/log folders (platformdirs), `ms_viewer.json` migration, rotating log file (core dependencies only) |
 | `tests/test_ms.py` | Synthetic-data tests for everything in `ms/` (no local data needed) |
 | `tests/test_masks.py`, `tests/test_app.py` | `MaskSet`; `Session` and the API (FastAPI `TestClient`) |
+| `tests/test_notebook.py` | Milestone 4: projects, settings migration and logs, active document, view state, the viewer (real server thread) and `pygcxgc --headless` |
 | `tests/test_structures.py` | Structure resolver and cache with a stubbed PubChem (`pubchem()` is reused by `test_app.py` and `e2e/backend.py`) |
 | `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
 | `frontend/src/api/` | Transport (HTTP + WebSocket, spec NB-4), typed client, binary array decoder; `schema.d.ts` is generated |
-| `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events; per-document mask edit queue), `view` (display, zoom, tool, active mask, selected shape), `images` (overview + detail layers), `masks.ts` (mask commands) |
+| `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events; per-document mask edit queue), `view` (display, zoom, tool, active mask, selected shape), `images` (overview + detail layers), `masks.ts` (mask commands), `viewSync.ts` (view state to/from the backend for projects) |
 | `frontend/src/chromatogram/` | WebGL2 renderer (`renderer.ts`, all display maths in the shader), view, axes, colour bar, overlays, Display popover |
-| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts, file browser, open and path dialogs, settings, command palette; Processing, Masks, Integration, Spectrum, Hits, Match, Peaks and Libraries panels |
+| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts (compact for notebooks), file browser, open and path dialogs (also "save as"), project commands (`project.ts`), settings, command palette; Processing, Masks, Integration, Spectrum, Hits, Match, Peaks and Libraries panels |
 | `frontend/src/ms/`, `store/ms.ts` | Stick plot (spectrum, head-to-tail), structure card, library picker; MS commands (select and search, EIC, peaks, libraries) and view state (selected hit and peak), spectrum/structure fetching |
 | `docs/example_docs/gui/app.md` | User documentation of the app |
 | `frontend/e2e/` | Playwright tests; `backend.py` serves a session with the example FID and a synthetic MS run |
@@ -170,6 +175,22 @@ files you change, and do not reformat untouched legacy code.
   a document's mask edits one after another (`queueMaskEdit`), so "New mask"
   then drawing goes into the new mask, and ignores `masks.updated` events of
   its own edits in flight.
+* **Projects and live state.** The *active document* is session state: the
+  frontend reports tab switches (`PUT /api/session/active`) and follows
+  `document.updated` events with `change: "activated"`. View state (display,
+  zoom) stays frontend-owned but is copied to `doc.view` (debounced `PUT
+  .../view`, flushed before saving) so projects saved from Python include
+  it; a document arriving with a `view` starts with it (`viewSync.ts`). Every
+  settings change emits `settings.updated` (`Settings.on_change`), and the
+  frontend's `updateSettings` ignores the PUT response, because a response
+  can be older than an event (e.g. recent files written by a save). Opening a
+  project writes its layouts into the settings, then emits `project.updated`
+  (`opened`), on which the workspace reloads its layout.
+* **Notebook viewer.** `ServerThread` binds and `listen()`s before
+  uvicorn starts (also in `serve`, so `READY` means connectable). One viewer
+  per process (`viewer._current`); `view(path)` opens in the background and
+  the viewer's properties `wait()` for it. IPython is optional: tests patch
+  `Viewer.show`. `gcgc.app` is imported lazily by `pyGCxGC.__getattr__`.
 * **UI pitfalls.** `TooltipTrigger asChild` overwrites the child's
   `data-state`, so toggle styles also key on `aria-checked`/`aria-pressed`. A
   native `<input type="color">` overflows small swatches unless sized and

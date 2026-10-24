@@ -20,9 +20,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import math
 import secrets
 import socket
+import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Literal
@@ -35,6 +38,7 @@ from pyGCxGC.app import schemas as S
 from pyGCxGC.app.arrays import MEDIA_TYPE, encode_array, max_pool
 from pyGCxGC.app.session import InvalidRequest, NotFound, Session, SessionError
 
+log = logging.getLogger("pyGCxGC.app")
 STATIC_DIR = Path(__file__).parent / "static"
 BINARY = {200: {"content": {MEDIA_TYPE: {}}, "description": "Binary array"}}
 ERRORS: dict[int | str, dict[str, Any]] = {
@@ -195,7 +199,13 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
         )
 
     @app.exception_handler(Exception)
-    async def server_error(_request: Request, exc: Exception):
+    async def server_error(request: Request, exc: Exception):
+        log.error(
+            "%s %s failed",
+            request.method,
+            request.url.path,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
         return JSONResponse(
             {
                 "detail": f"{type(exc).__name__}: {exc}",
@@ -220,6 +230,37 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
     def put_settings(changes: dict[str, Any]):
         """Merge ``changes`` into the settings (nested objects are merged)."""
         return session.update_settings(changes)
+
+    @api.put("/session/active", status_code=204)
+    def set_active_document(req: S.ActiveDocument):
+        """Report the document shown by the app (Python clients see it as active)."""
+        session.set_active_document(req.document_id)
+
+    @api.post("/logs/open", status_code=204)
+    def open_log_folder():
+        """Show the log folder in the system's file manager (spec FILE-2)."""
+        from pyGCxGC.app.paths import open_folder
+
+        try:
+            open_folder(session.log_dir)
+        except OSError as exc:
+            raise InvalidRequest(f"Cannot open {session.log_dir}: {exc}") from exc
+
+    # -------------------------------------------------------------- projects
+    @api.post("/project/save", response_model=S.ProjectSaved)
+    def save_project(req: S.ProjectSave):
+        """Save the session as a project file (``*.gcxgc``)."""
+        return session.save_project(req.path, req.ui)
+
+    @api.post("/project/open", response_model=S.JobStarted, status_code=202)
+    def open_project(req: S.ProjectOpen):
+        """Open a project file (job; result ``{"document_ids", "project"}``)."""
+        return started(session.open_project(req.path, req.replace))
+
+    @api.post("/project/close", status_code=204)
+    def close_project():
+        """Close all documents and forget the project."""
+        session.close_project()
 
     @api.get("/fs", response_model=S.FsListing)
     def list_files(path: str | None = None, hidden: bool = False):
@@ -268,6 +309,11 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
     @api.delete("/documents/{doc_id}", status_code=204)
     def close_document(doc_id: str):
         session.close_document(doc_id)
+
+    @api.put("/documents/{doc_id}/view", status_code=204)
+    def set_view(doc_id: str, view: dict[str, Any] | None = None):
+        """Store the frontend's view state (display, zoom); saved in projects."""
+        session.set_view(doc_id, view)
 
     @api.put("/documents/{doc_id}/signal", response_model=S.JobStarted, status_code=202)
     def set_signal(doc_id: str, req: S.SignalRequest):
@@ -641,6 +687,23 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
 
 
 # ------------------------------------------------------------------ running
+def _bind(port: int) -> socket.socket:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
+    # connections made before uvicorn has started wait in the backlog
+    # (READY is printed before ``server.run``)
+    sock.listen(2048)
+    return sock
+
+
+def _uvicorn_server(session: Session, token: str, port: int):
+    import uvicorn
+
+    app = create_app(session, token, port)
+    return uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
+
+
 def serve(
     session: Session | None = None,
     port: int = 0,
@@ -661,19 +724,81 @@ def serve(
     on_ready : callable, optional
         ``on_ready(port, token)``, called once the socket is bound.
     """
-    import uvicorn
-
     session = session or Session()
     token = token or secrets.token_urlsafe(32)
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", port))
+    sock = _bind(port)
     port = sock.getsockname()[1]
-    app = create_app(session, token, port)
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
+    server = _uvicorn_server(session, token, port)
     if on_ready is not None:
         on_ready(port, token)
     try:
         server.run(sockets=[sock])
     finally:
         session.close()
+
+
+class ServerThread:
+    """
+    The server in a background thread of this process (notebooks, the
+    pywebview window): it serves the very objects of the session.
+
+    Examples
+    --------
+    >>> server = ServerThread(Session()).start()  # doctest: +SKIP
+    >>> server.url  # doctest: +SKIP
+    'http://127.0.0.1:41234/?token=...'
+    >>> server.stop()  # doctest: +SKIP
+    """
+
+    def __init__(self, session: Session, port: int = 0, token: str | None = None):
+        self.session = session
+        self.token = token or secrets.token_urlsafe(32)
+        self._sock = _bind(port)
+        self.port: int = self._sock.getsockname()[1]
+        self._server = _uvicorn_server(session, self.token, self.port)
+        self._thread = threading.Thread(
+            target=self._server.run,
+            kwargs={"sockets": [self._sock]},
+            name="pygcxgc-server",
+            daemon=True,
+        )
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    @property
+    def url(self) -> str:
+        """The app's URL, with the access token."""
+        return f"{self.base_url}/?token={self.token}"
+
+    @property
+    def running(self) -> bool:
+        return self._thread.is_alive() and not self._server.should_exit
+
+    def start(self, timeout: float = 15.0) -> ServerThread:
+        """Start serving; returns once the server accepts connections."""
+        self._thread.start()
+        deadline = time.monotonic() + timeout
+        while not self._server.started:
+            if not self._thread.is_alive():
+                raise RuntimeError("The pyGCxGC server did not start")
+            if time.monotonic() > deadline:
+                raise TimeoutError("The pyGCxGC server did not start in time")
+            time.sleep(0.01)
+        return self
+
+    def join(self, timeout: float | None = None) -> None:
+        """Wait until the server stops (Ctrl+C interrupts the wait)."""
+        while self._thread.is_alive():
+            self._thread.join(0.5 if timeout is None else timeout)
+            if timeout is not None:
+                break
+
+    def stop(self, timeout: float = 5.0) -> None:
+        """Stop serving (the session stays open)."""
+        self._server.should_exit = True
+        if self._thread.is_alive():
+            self._thread.join(timeout)
+        with contextlib.suppress(OSError):
+            self._sock.close()

@@ -33,6 +33,9 @@ export type StructureInfo = Schemas['StructureInfo']
 export type StructureData = Schemas['StructureData']
 export type PeakEdit = Omit<Schemas['PeakEdit'], 'delete'> & { delete?: boolean }
 export type LibraryAdd = Schemas['LibraryAdd']
+export type ProjectInfo = Schemas['ProjectInfo']
+export type ProjectSaved = Schemas['ProjectSaved']
+export type SessionFiles = Schemas['SessionFiles']
 
 /** A row of the peak table (`PeakTable.rows`). */
 export interface PeakRow {
@@ -147,6 +150,12 @@ export type SessionEvent =
   | (EventBase & { type: 'peaks.updated'; n_peaks?: number; stale?: boolean })
   | (EventBase & { type: 'library.updated'; library: LibraryInfo })
   | (EventBase & { type: 'selection.changed'; selection: SelectionInfo | null })
+  | (EventBase & { type: 'settings.updated'; settings: Settings })
+  | (EventBase & {
+      type: 'project.updated'
+      change: 'saved' | 'opened' | 'closed'
+      project: ProjectInfo | null
+    })
 
 interface EventBase {
   document_id: string | null
@@ -182,7 +191,8 @@ export interface Settings {
   ms?: { snap?: boolean; n_average?: number; peak_snr?: number }
   recent_files?: string[]
   ui?: {
-    layouts?: Partial<Record<DocumentKind, string>>
+    /** Saved dockview layouts by kind (`fid`, `ms`, `compact-fid`, `compact-ms`). */
+    layouts?: Record<string, string | undefined>
     last_folder?: string
   }
   [key: string]: unknown

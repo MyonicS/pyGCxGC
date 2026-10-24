@@ -120,6 +120,9 @@ class DocumentInfo(Info):
     sampling_inferred: bool | None = Field(
         None, description="FID: the sampling interval was inferred from the data"
     )
+    view: dict[str, Any] | None = Field(
+        None, description="View state stored by the frontend (e.g. from a project)"
+    )
 
 
 class SignalRequest(Model):
@@ -151,7 +154,7 @@ class LibraryInfo(Info):
     id: str
     name: str
     path: str
-    source: Literal["nist", "mona", "msp", "npz"]
+    source: Literal["nist", "mona", "msp", "npz", "python"]
     status: Literal["loading", "ready", "failed", "removed"]
     active: bool
     n_spectra: int | None
@@ -173,6 +176,19 @@ class LibraryUpdate(Model):
 
 
 # ------------------------------------------------------------------ session
+class ProjectInfo(Info):
+    path: str
+    name: str
+
+
+class SessionFiles(Info):
+    """Where the session keeps its files (spec FILE-1/2)."""
+
+    settings: str | None
+    cache: str
+    logs: str
+
+
 class SessionInfo(Info):
     version: str
     revision: int
@@ -180,6 +196,32 @@ class SessionInfo(Info):
     libraries: list[LibraryInfo]
     jobs: list[JobInfo]
     settings: dict[str, Any]
+    active_document_id: str | None
+    project: ProjectInfo | None
+    files: SessionFiles
+
+
+class ActiveDocument(Model):
+    document_id: str
+
+
+# ------------------------------------------------------------------ projects
+class ProjectSave(Model):
+    path: str | None = Field(
+        None, description="Project file (.gcxgc); default: the current project"
+    )
+    ui: dict[str, Any] | None = Field(None, description="Frontend state to store")
+
+
+class ProjectSaved(Model):
+    path: str
+    warnings: list[str]
+    project: ProjectInfo
+
+
+class ProjectOpen(Model):
+    path: str
+    replace: bool = Field(True, description="Close the open documents first")
 
 
 # ------------------------------------------------------------------ search
@@ -441,7 +483,7 @@ class FileProbe(Info):
     path: str
     name: str
     size: int | None
-    kind: Literal["fid", "ms"] | None
+    kind: Literal["fid", "ms", "project"] | None
     error: str | None
     needs_modulation_time: bool
 

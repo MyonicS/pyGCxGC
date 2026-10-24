@@ -1,6 +1,6 @@
 /** Empty state (spec SHELL-5): open a file, recent files, drag and drop. */
 
-import { Clock, FolderOpen, Upload } from 'lucide-react'
+import { Clock, FileText, FolderOpen, Upload } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { useSession } from '@/store/session'
 
 import { droppedFiles } from './dropFiles'
 import { openPath, showOpenDialog } from './openFile'
+import { isProjectPath } from './project'
 import { mod } from './TopBar'
 
 const NO_FILES: string[] = []
@@ -43,7 +44,7 @@ export function Welcome() {
           <h1 className="text-xl font-semibold tracking-tight">pyGCxGC Studio</h1>
           <p className="text-sm text-muted-foreground">
             GCxGC-FID mask integration and GCxGC-MS inspection. Open an OpenChrom CSV, ANDI-MS .cdf
-            or JCAMP-DX file.
+            or JCAMP-DX file, or a .gcxgc project.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -71,6 +72,9 @@ export function Welcome() {
                     onClick={() => void openPath(path)}
                     title={path}
                   >
+                    {isProjectPath(path) && (
+                      <FileText className="size-3.5 shrink-0 self-center text-primary" />
+                    )}
                     <span className="truncate text-sm font-medium">{basename(path)}</span>
                     <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">
                       {dirname(path)}

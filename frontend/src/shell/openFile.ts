@@ -7,6 +7,8 @@ import { notifyError } from '@/lib/notify'
 import { basename } from '@/lib/utils'
 import { api, setActiveDocument, updateSettings, useSession, waitForJob } from '@/store/session'
 
+import { openProject } from './project'
+
 interface OpenDialogState {
   open: boolean
   /** File to preselect (e.g. a recent FID file that needs a modulation time). */
@@ -25,7 +27,8 @@ export function hideOpenDialog() {
 
 /**
  * Open a file. FID files need a modulation time: without one (and without a
- * default in the settings) the open dialog is shown for the file.
+ * default in the settings) the open dialog is shown for the file. Projects
+ * (`.gcxgc`) are opened as projects.
  */
 export async function openPath(path: string, params?: ProcessingParams): Promise<string | null> {
   try {
@@ -33,6 +36,10 @@ export async function openPath(path: string, params?: ProcessingParams): Promise
       const probe = await api().probe(path)
       if (probe.error) {
         notifyError(`Open ${basename(path)}`, probe.error)
+        return null
+      }
+      if (probe.kind === 'project') {
+        await openProject(path)
         return null
       }
       if (probe.kind === 'fid' && probe.needs_modulation_time) {
@@ -57,7 +64,7 @@ export function rememberModulationTime(seconds: number) {
   if (current !== seconds) void updateSettings({ fid: { modulation_time: seconds } })
 }
 
-export const SUPPORTED_EXTENSIONS = ['.csv', '.txt', '.cdf', '.jdx', '.dx', '.jcamp']
+export const SUPPORTED_EXTENSIONS = ['.csv', '.txt', '.cdf', '.jdx', '.dx', '.jcamp', '.gcxgc']
 
 export function isSupported(name: string): boolean {
   const lower = name.toLowerCase()

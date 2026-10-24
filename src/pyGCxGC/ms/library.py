@@ -20,6 +20,7 @@ import io
 import itertools
 import os
 import re
+import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,7 +46,19 @@ _READABLE_CACHE_VERSIONS = (1, 2)
 
 
 def default_cache_dir() -> Path:
-    """Directory used to cache converted libraries (``~/.cache/pyGCxGC``)."""
+    """
+    Directory used to cache converted libraries.
+
+    ``~/.cache/pyGCxGC`` on Linux (``$XDG_CACHE_HOME`` if set), otherwise the
+    platform's cache folder from ``platformdirs`` when it is installed (it
+    comes with the ``app`` extra), e.g. ``~/Library/Caches/pyGCxGC`` on macOS
+    and ``%LOCALAPPDATA%\\pyGCxGC\\Cache`` on Windows.
+    """
+    if not sys.platform.startswith("linux"):
+        with contextlib.suppress(ImportError):
+            from platformdirs import user_cache_dir
+
+            return Path(user_cache_dir("pyGCxGC", appauthor=False))
     base = os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache"
     return Path(base) / "pyGCxGC"
 

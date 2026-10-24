@@ -13,22 +13,28 @@ The app needs the `app` extra:
 
 ```bash
 pip install "pyGCxGC[app]"
-pygcxgc --open
+pygcxgc
 ```
 
 (`python -m pyGCxGC.app` is the same command.)
 
-`--open` opens the app in the web browser. Without it, the command prints the
-address (it contains an access token). Files can be passed directly:
+The app opens in its own window when [pywebview](https://pywebview.flowrl.com)
+is installed (`pip install pywebview`), otherwise in the web browser
+(`--browser` always uses the browser). The terminal shows the address, which
+contains an access token; `Ctrl+C` stops the app. Files and projects can be
+passed directly:
 
 ```bash
-pygcxgc --open -m 20 run.csv
-pygcxgc --open -l path/to/MSSEARCH/MAINLIB run.cdf
+pygcxgc -m 20 run.csv
+pygcxgc -l path/to/MSSEARCH/MAINLIB run.cdf
+pygcxgc samples.gcxgc
 ```
 
 `-m` sets the modulation time in seconds for all files given. FID files need
 one; for GCxGC-MS files it is estimated when omitted. `-l` loads a spectral
 library. The server only accepts connections from the same computer.
+`--headless` only serves: it prints `READY <port>` and the address and opens
+nothing (for scripts and the desktop app).
 
 `pygcxgc-maskcreator` and `pygcxgc-msviewer` are deprecated: they now start
 the app. Add `--legacy` to run the old Tk tools while they still exist.
@@ -36,9 +42,9 @@ the app. Add `--legacy` to run the old Tk tools while they still exist.
 ## Opening files and the workspace
 
 *Open* (or `Ctrl+O`) shows a file browser for OpenChrom CSV (FID or MS),
-ANDI-MS `.cdf` and JCAMP-DX files. For FID files it asks for the modulation
-time and can remember it for the next files. Several files can be open at
-once; they appear as tabs in the top bar.
+ANDI-MS `.cdf` and JCAMP-DX files and for projects (`.gcxgc`). For FID files
+it asks for the modulation time and can remember it for the next files.
+Several files can be open at once; they appear as tabs in the top bar.
 
 The workspace consists of panels that can be resized, moved and stacked as
 tabs by dragging. The layout is remembered separately for FID and MS
@@ -253,3 +259,104 @@ change spectra only and keep an image baseline of your choice:
 
 The baseline in force is shown in the spectrum header and written to the
 exports.
+
+## Projects
+
+A project (`*.gcxgc`) saves the state of your work so that you can continue
+later: the open files with their processing parameters and signal (TIC or
+EIC), the masks, the peak tables with your edits, the selected points, the
+display settings and zoom of every document, the libraries in use and the
+layout. It stores file paths, never data, so the chromatogram files must stay
+available. Paths are saved relative to the project file, so a folder with the
+project and its data can be moved or copied to another computer.
+
+* *Menu ▸ Save project* (`Ctrl+S`) asks for a file name the first time;
+  *Save project as…* (`Ctrl+Shift+S`) saves a copy under another name. The
+  project's name appears in the top bar; click it to save.
+* Open a project like a chromatogram (*Open*, recent files, or
+  `pygcxgc samples.gcxgc`). It replaces the open documents; with documents
+  open, a notice asks first. Missing files and libraries are reported and
+  skipped.
+* *Menu ▸ Close all* closes all documents and the project.
+
+From Python, `Session.load(path)` opens a project without the app:
+
+```python
+from pyGCxGC.app import Session
+
+session = Session.load("samples.gcxgc")
+doc_id = session.active_document_id
+session.integration(doc_id)["masks"]  # volume, percent and pixels per mask
+session.masks(doc_id)                  # the MaskSet
+```
+
+Documents passed from Python as objects (see below) have no file and are not
+saved in projects.
+
+## Notebooks
+
+`gcgc.view` opens the app inside a Jupyter or VS Code notebook, on the very
+objects of your notebook. The app runs in a background thread of the kernel,
+so the notebook stays usable:
+
+```python
+import pyGCxGC as gcgc
+
+chrom = gcgc.parse_2D_chromatogram("run.csv", modulation_time=20)
+viewer = gcgc.view(chrom)           # shows the app below the cell
+```
+
+`gcgc.view` also accepts a `GCxGC_MS` object or a file path, and a library:
+`gcgc.view(data, library="path/to/MAINLIB")` (a path or a loaded
+`SpectralLibrary`; without one, the libraries saved in the app are loaded).
+Calling it again adds another document to the same app. The inline view uses
+a compact layout; `viewer.open_window()` opens the full app in the browser and
+`viewer.show()` shows it inline again.
+
+The viewer reads the current state of the app (the document shown in the
+app), never a copy:
+
+| Property | Content |
+|---|---|
+| `viewer.masks` | the masks (a live mask set, see below) |
+| `viewer.integration` | volumes per mask and `unassigned` (DataFrame) |
+| `viewer.selection` | the selected point: `.spectrum` (raw and `.corrected`), `.hits` |
+| `viewer.spectrum`, `viewer.hits` | the corrected spectrum and the hits as a table |
+| `viewer.peaks` | the peak table (DataFrame) with your edits |
+| `viewer.library`, `viewer.libraries` | the active library and all loaded ones |
+| `viewer.data` | the chromatogram object of the document |
+
+Changes made from Python appear in the app at once:
+
+```python
+viewer.set_signal(eic=[91])              # or viewer.set_signal("tic")
+viewer.select(rt1=12.5, rt2=3.2)         # RT1 in min, RT2 in s; searches the libraries
+viewer.detect_peaks(snr=10)
+
+viewer.masks.add_rect((10, 12), (1.0, 2.5), mask="Aromatics")
+viewer.masks.add_polygon([(14, 1), (16, 1), (16, 3)], mask="Aromatics")
+viewer.masks.add("masks.gcxgc-masks.json")   # or a MaskSet, a TIFF folder
+viewer.masks.rename("Aromatics", "Monoaromatics")
+viewer.masks.undo()
+
+viewer.on("select", lambda event: print(event["selection"]["rt1"]))
+```
+
+`viewer.masks` reads like a `MaskSet` (`len`, `names`, `viewer.masks["A"]`,
+`rasterize`, `integrate`, `save`, `to_tiffs`), and edits made through it can
+be undone in the app. `viewer.on` accepts `"select"`, `"masks"`, `"peaks"`,
+`"document"`, `"library"`, `"job"`, `"project"` or `"*"`; the callback runs
+in a background thread and `viewer.on(...)` returns a function that removes
+it. `viewer.activate(obj)` switches the document, `viewer.save_project(path)`
+saves a project and `viewer.close()` stops the app.
+
+## Settings, caches and logs
+
+Settings are saved in `app.json` in your configuration folder
+(`~/.config/pyGCxGC` on Linux, `~/Library/Application Support/pyGCxGC` on
+macOS, `%LOCALAPPDATA%\pyGCxGC` on Windows). The settings of the old GCxGC-MS
+viewer (its library and last file) are taken over on first start. Converted
+libraries, structures and log files are kept in the cache folder
+(`~/.cache/pyGCxGC` on Linux). *Settings* shows these folders, and *Menu ▸ Open
+log folder* opens the logs. Nothing is sent anywhere; the only network
+features are the MoNA download and the optional PubChem structure lookup.

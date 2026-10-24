@@ -16,8 +16,10 @@ import type {
   LibraryInfo,
   MaskSetInfo,
   PeakTable,
+  ProjectInfo,
   SelectionInfo,
   SessionEvent,
+  SessionFiles,
   Settings,
 } from '@/api/types'
 import { notifyError, notifyWarnings } from '@/lib/notify'
@@ -43,6 +45,12 @@ export interface SessionState {
   integration: Record<string, IntegrationState | undefined>
   /** Last event revision per document (spec API-4). */
   revisions: Record<string, number>
+  /** The project last saved or opened. */
+  project: ProjectInfo | null
+  /** Increases whenever a project is opened (the workspace reloads its layout). */
+  projectOpened: number
+  /** Settings, cache and log folders of the backend. */
+  files: SessionFiles | null
 }
 
 export interface IntegrationState {
@@ -70,6 +78,9 @@ export const useSession = create<SessionState>(() => ({
   masks: {},
   integration: {},
   revisions: {},
+  project: null,
+  projectOpened: 0,
+  files: null,
 }))
 
 const set = useSession.setState
@@ -114,10 +125,18 @@ export async function resync(): Promise<void> {
       ...s.order.filter((id) => id in documents),
       ...info.documents.map((d) => d.id).filter((id) => !s.order.includes(id)),
     ]
-    const activeId = s.activeId && s.activeId in documents ? s.activeId : (order[0] ?? null)
+    const backendActive = info.active_document_id ?? null
+    const activeId =
+      s.activeId && s.activeId in documents
+        ? s.activeId
+        : backendActive && backendActive in documents
+          ? backendActive
+          : (order[0] ?? null)
     return {
       ready: true,
       version: info.version,
+      project: info.project ?? null,
+      files: info.files,
       documents,
       order,
       activeId,
@@ -263,7 +282,16 @@ export function handleEvent(event: SessionEvent): void {
       onJob(event.job)
       break
     case 'document.updated':
-      onDocument(event.document_id, event.document)
+      onDocument(event.document_id, event.document, event.change)
+      break
+    case 'settings.updated':
+      // changed by the backend (recent files, libraries) or another window
+      set({ settings: event.settings })
+      break
+    case 'project.updated':
+      set({ project: event.project })
+      // the project brings its layouts (the settings arrived before): reload them
+      if (event.change === 'opened') set((s) => ({ projectOpened: s.projectOpened + 1 }))
       break
     case 'selection.changed':
       if (docId) set((s) => ({ selections: { ...s.selections, [docId]: event.selection } }))
@@ -318,8 +346,17 @@ function onJob(job: JobInfo) {
   }
 }
 
-function onDocument(docId: string | null, doc: DocumentInfo | null) {
+function onDocument(docId: string | null, doc: DocumentInfo | null, change?: string) {
   if (!docId) return
+  if (change === 'activated' && doc && docId in get().documents) {
+    // from Python or another window: show that document
+    set((s) => ({
+      documents: { ...s.documents, [docId]: doc },
+      order: s.order.includes(docId) ? s.order : [...s.order, docId],
+      activeId: docId,
+    }))
+    return
+  }
   if (doc === null) {
     set((s) => {
       const documents = { ...s.documents }
@@ -340,7 +377,7 @@ function onDocument(docId: string | null, doc: DocumentInfo | null) {
   set((s) => ({
     documents: { ...s.documents, [docId]: doc },
     order: s.order.includes(docId) ? s.order : [...s.order, docId],
-    activeId: s.activeId ?? docId,
+    activeId: change === 'activated' ? docId : (s.activeId ?? docId),
   }))
   // new data (processing, signal): the same masks cover other values
   if (isNew) void refreshDocumentState(doc)
@@ -361,8 +398,13 @@ export function waitForJob(job: JobInfo): Promise<JobInfo> {
 }
 
 // ------------------------------------------------------------------ actions
+/** Show a document; the backend learns which one is active (Python clients see it). */
 export function setActiveDocument(docId: string) {
-  if (docId in get().documents) set({ activeId: docId })
+  if (!(docId in get().documents) || get().activeId === docId) return
+  set({ activeId: docId })
+  get()
+    .api?.setActiveDocument(docId)
+    .catch(() => undefined)
 }
 
 export function moveDocument(docId: string, toIndex: number) {
@@ -381,14 +423,26 @@ export async function closeDocument(docId: string) {
   }
 }
 
-/** Merge `changes` into the settings (locally at once, then on the backend). */
+/**
+ * Merge `changes` into the settings (locally at once, then on the backend).
+ * The backend's state arrives as `settings.updated` events, in order; the
+ * response could be older than an event (e.g. recent files of a save).
+ */
 export async function updateSettings(changes: Settings): Promise<void> {
   set((s) => ({ settings: deepMerge(s.settings, changes) }))
   try {
-    const settings = await api().updateSettings(changes)
-    set({ settings })
+    await api().updateSettings(changes)
   } catch (err) {
     notifyError('Save settings', err)
+  }
+}
+
+/** Show the log folder in the system's file manager (spec FILE-2). */
+export async function openLogFolder() {
+  try {
+    await api().openLogFolder()
+  } catch (err) {
+    notifyError('Open log folder', err)
   }
 }
 

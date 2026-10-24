@@ -9,6 +9,7 @@ import { resetZoom, setTool } from '@/store/view'
 
 import { openCommandPalette } from './CommandPalette'
 import { showOpenDialog } from './openFile'
+import { saveProject } from './project'
 
 /**
  * Single keys only act when no dialog or menu is open (closing ones still
@@ -33,6 +34,13 @@ export function useShortcuts() {
       if (modKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
         e.preventDefault()
         showOpenDialog()
+        return
+      }
+      // save the project (spec §9); Shift: save as
+      if (modKey && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        if (useSession.getState().order.length && !blockingOverlayOpen())
+          void saveProject(e.shiftKey)
         return
       }
       if (isEditableTarget(e.target)) return

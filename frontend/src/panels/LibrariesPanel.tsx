@@ -42,6 +42,7 @@ const SOURCE_LABEL: Record<LibraryInfo['source'], string> = {
   mona: 'MoNA',
   msp: 'MSP',
   npz: 'Cache',
+  python: 'Python',
 }
 
 async function addFromFile() {

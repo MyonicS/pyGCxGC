@@ -1,4 +1,7 @@
-/** Settings: theme and the default display of new documents (spec THEME-1, VIEW-8). */
+/**
+ * Settings: theme, the default display of new documents (spec THEME-1,
+ * VIEW-8), and where settings, caches and logs are kept (FILE-1/2).
+ */
 
 import { create } from 'zustand'
 
@@ -22,7 +25,7 @@ import {
 } from '@/components/ui/select'
 import { COLORMAPS, colormapGradient } from '@/lib/colormaps'
 import { SCALING_LABELS, SCALINGS } from '@/lib/scaling'
-import { updateSettings, useSession } from '@/store/session'
+import { openLogFolder, updateSettings, useSession } from '@/store/session'
 import { defaultDisplay, INTERPOLATION_LABELS, INTERPOLATIONS } from '@/store/view'
 
 import { NumberField } from '@/chromatogram/DisplayPopover'
@@ -42,6 +45,7 @@ export function SettingsDialog() {
   const theme = useThemeSetting()
   const d = defaultDisplay(settings)
   const modulation = settings.fid?.modulation_time
+  const files = useSession((s) => s.files)
 
   return (
     <Dialog open={open} onOpenChange={(o) => useSettingsDialog.setState({ open: o })}>
@@ -106,6 +110,38 @@ export function SettingsDialog() {
               Ask each time
             </Button>
           </div>
+          {files && (
+            <>
+              <h3 className="pt-2 text-xs font-medium text-muted-foreground">Files</h3>
+              <dl className="grid grid-cols-[8rem_1fr] gap-x-2 gap-y-1 text-xs">
+                <dt>Settings</dt>
+                <dd className="truncate font-mono" title={files.settings ?? ''}>
+                  {files.settings ?? 'in memory'}
+                </dd>
+                <dt>Cache</dt>
+                <dd className="truncate font-mono" title={files.cache}>
+                  {files.cache}
+                </dd>
+                <dt>Logs</dt>
+                <dd className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-mono" title={files.logs}>
+                    {files.logs}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 shrink-0 px-2 text-xs"
+                    onClick={() => void openLogFolder()}
+                  >
+                    Open
+                  </Button>
+                </dd>
+              </dl>
+              <p className="text-[11px] text-muted-foreground">
+                Logs stay on this computer; nothing is sent anywhere.
+              </p>
+            </>
+          )}
         </div>
         <DialogFooter className="sm:justify-between">
           <Button variant="outline" size="sm" onClick={() => resetLayout()}>

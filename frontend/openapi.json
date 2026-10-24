@@ -1,6 +1,20 @@
 {
   "components": {
     "schemas": {
+      "ActiveDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "title": "ActiveDocument",
+        "type": "object"
+      },
       "BatchRequest": {
         "additionalProperties": false,
         "properties": {
@@ -201,6 +215,19 @@
             "title": "Summary",
             "type": "string"
           },
+          "view": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "View state stored by the frontend (e.g. from a project)",
+            "title": "View"
+          },
           "warnings": {
             "items": {
               "type": "string"
@@ -340,7 +367,8 @@
               {
                 "enum": [
                   "fid",
-                  "ms"
+                  "ms",
+                  "project"
                 ],
                 "type": "string"
               },
@@ -918,7 +946,8 @@
               "nist",
               "mona",
               "msp",
-              "npz"
+              "npz",
+              "python"
             ],
             "title": "Source",
             "type": "string"
@@ -1816,6 +1845,103 @@
         "title": "ProcessingParams",
         "type": "object"
       },
+      "ProjectInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "name"
+        ],
+        "title": "ProjectInfo",
+        "type": "object"
+      },
+      "ProjectOpen": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "replace": {
+            "default": true,
+            "description": "Close the open documents first",
+            "title": "Replace",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ProjectOpen",
+        "type": "object"
+      },
+      "ProjectSave": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Project file (.gcxgc); default: the current project",
+            "title": "Path"
+          },
+          "ui": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Frontend state to store",
+            "title": "Ui"
+          }
+        },
+        "title": "ProjectSave",
+        "type": "object"
+      },
+      "ProjectSaved": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectInfo"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "warnings",
+          "project"
+        ],
+        "title": "ProjectSaved",
+        "type": "object"
+      },
       "RectShape": {
         "additionalProperties": false,
         "properties": {
@@ -2223,15 +2349,61 @@
         "title": "SelectionInfo",
         "type": "object"
       },
+      "SessionFiles": {
+        "additionalProperties": true,
+        "description": "Where the session keeps its files (spec FILE-1/2).",
+        "properties": {
+          "cache": {
+            "title": "Cache",
+            "type": "string"
+          },
+          "logs": {
+            "title": "Logs",
+            "type": "string"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          }
+        },
+        "required": [
+          "settings",
+          "cache",
+          "logs"
+        ],
+        "title": "SessionFiles",
+        "type": "object"
+      },
       "SessionInfo": {
         "additionalProperties": true,
         "properties": {
+          "active_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Document Id"
+          },
           "documents": {
             "items": {
               "$ref": "#/components/schemas/DocumentInfo"
             },
             "title": "Documents",
             "type": "array"
+          },
+          "files": {
+            "$ref": "#/components/schemas/SessionFiles"
           },
           "jobs": {
             "items": {
@@ -2246,6 +2418,16 @@
             },
             "title": "Libraries",
             "type": "array"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "revision": {
             "title": "Revision",
@@ -2267,7 +2449,10 @@
           "documents",
           "libraries",
           "jobs",
-          "settings"
+          "settings",
+          "active_document_id",
+          "project",
+          "files"
         ],
         "title": "SessionInfo",
         "type": "object"
@@ -4521,6 +4706,77 @@
         "summary": "Get Spectrum"
       }
     },
+    "/api/documents/{doc_id}/view": {
+      "put": {
+        "description": "Store the frontend's view state (display, zoom); saved in projects.",
+        "operationId": "set_view_api_documents__doc_id__view_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "View"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set View"
+      }
+    },
     "/api/fs": {
       "get": {
         "operationId": "list_files_api_fs_get",
@@ -5183,6 +5439,188 @@
         "summary": "Library Structure"
       }
     },
+    "/api/logs/open": {
+      "post": {
+        "description": "Show the log folder in the system's file manager (spec FILE-2).",
+        "operationId": "open_log_folder_api_logs_open_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Open Log Folder"
+      }
+    },
+    "/api/project/close": {
+      "post": {
+        "description": "Close all documents and forget the project.",
+        "operationId": "close_project_api_project_close_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          }
+        },
+        "summary": "Close Project"
+      }
+    },
+    "/api/project/open": {
+      "post": {
+        "description": "Open a project file (job; result ``{\"document_ids\", \"project\"}``).",
+        "operationId": "open_project_api_project_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectOpen"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Project"
+      }
+    },
+    "/api/project/save": {
+      "post": {
+        "description": "Save the session as a project file (``*.gcxgc``).",
+        "operationId": "save_project_api_project_save_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSaved"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Project"
+      }
+    },
     "/api/search": {
       "post": {
         "description": "Search the active libraries. With a document and a point, the point is\nselected first; with a document only, its selection is searched.",
@@ -5278,6 +5716,58 @@
           }
         },
         "summary": "Get Session"
+      }
+    },
+    "/api/session/active": {
+      "put": {
+        "description": "Report the document shown by the app (Python clients see it as active).",
+        "operationId": "set_active_document_api_session_active_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Active Document"
       }
     },
     "/api/settings": {

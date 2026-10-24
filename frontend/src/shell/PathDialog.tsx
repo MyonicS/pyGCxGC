@@ -4,12 +4,14 @@
  *
  *     const path = await pickPath({ title: 'Import masks', mode: 'any', extensions: ['.tif'] })
  *     const paths = await pickPaths({ title: 'Batch', extensions: ['.csv'] })
+ *     const file = await pickPath({ title: 'Save', mode: 'save', defaultName: 'a.gcxgc' })
  */
 
 import { useState } from 'react'
 import { create } from 'zustand'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -26,10 +28,12 @@ import { FileBrowser } from './FileBrowser'
 export interface PickOptions {
   title: string
   description?: string
-  /** `folder`: folders only; `any`: a file or a folder. */
-  mode: 'file' | 'folder' | 'any'
+  /** `folder`: folders only; `any`: a file or a folder; `save`: a folder and a file name. */
+  mode: 'file' | 'folder' | 'any' | 'save'
   extensions?: string[]
   confirm?: string
+  /** File name proposed in `save` mode. */
+  defaultName?: string
 }
 
 interface Request extends PickOptions {
@@ -75,11 +79,17 @@ function PathDialogBody({ request }: { request: Request }) {
   const [folder, setFolder] = useState<string | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
   const [many, setMany] = useState<string[]>([])
+  const [name, setName] = useState(request.defaultName ?? '')
+  const saving = request.mode === 'save'
   const extensions = request.extensions?.map((e) => e.toLowerCase()) ?? []
   const isRelevant = (name: string) =>
     !extensions.length || extensions.some((ext) => name.toLowerCase().endsWith(ext))
   // in folder mode the current folder is the default choice
-  const selected = picked ?? (request.mode === 'folder' ? folder : null)
+  const selected = saving
+    ? folder && name.trim()
+      ? joinPath(folder, name.trim())
+      : null
+    : (picked ?? (request.mode === 'folder' ? folder : null))
   const result = request.multiple ? many : selected ? [selected] : []
 
   const confirm = (paths: string[] = result) => {
@@ -102,19 +112,38 @@ function PathDialogBody({ request }: { request: Request }) {
         isRelevant={isRelevant}
         emptyText={request.mode === 'folder' ? 'No subfolders.' : 'No matching files here.'}
         selected={request.multiple ? (path) => many.includes(path) : selected}
-        selectFolders={request.mode !== 'file'}
+        selectFolders={request.mode !== 'file' && !saving}
         onSelect={(e) => {
+          if (saving) {
+            if (!e.is_dir) setName(basename(e.path))
+            return
+          }
           if (request.mode === 'folder' && !e.is_dir) return
           if (request.multiple) {
             setMany((m) => (m.includes(e.path) ? m.filter((p) => p !== e.path) : [...m, e.path]))
           } else setPicked(e.path)
         }}
-        onActivate={(e) => !request.multiple && request.mode !== 'folder' && confirm([e.path])}
+        onActivate={(e) =>
+          !request.multiple && request.mode !== 'folder' && !saving && confirm([e.path])
+        }
         onFolderChange={(path) => {
           setFolder(path)
           setPicked(null)
         }}
       />
+      {saving && (
+        <label className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">File name</span>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && confirm()}
+            className="h-8 flex-1 font-mono text-xs"
+            autoFocus
+            data-testid="path-name"
+          />
+        </label>
+      )}
       <p className="min-h-5 truncate rounded-md bg-muted/60 px-3 py-2 font-mono text-xs">
         {request.multiple
           ? many.length
@@ -132,4 +161,10 @@ function PathDialogBody({ request }: { request: Request }) {
       </DialogFooter>
     </DialogContent>
   )
+}
+
+/** `folder` + `name` with the folder's separator. */
+export function joinPath(folder: string, name: string): string {
+  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/'
+  return folder.endsWith(sep) ? folder + name : folder + sep + name
 }

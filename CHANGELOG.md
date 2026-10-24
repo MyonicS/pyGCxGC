@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `GCxGC_MS.region_spectrum` (summed, background corrected spectrum of a mask).
 - `pygcxgc` command (the app).
 - API: structure info and SVG depictions, peak re-identification, region selection.
+- App milestone 4: projects (`*.gcxgc`: files, processing, masks, peak edits, selections, view and layout; *Save project*, `Ctrl+S`; `Session.load`), `gcgc.view` for Jupyter and VS Code notebooks with live state (`masks`, `peaks`, `selection`, `integration`, `library`) and changes from Python (`set_signal`, `select`, `masks.add_rect`, `on`), a compact inline layout, a rotating local log file (*Open log folder*) and the settings and cache folders from `platformdirs`.
+- `pygcxgc` opens a desktop window when pywebview is installed (otherwise the browser); `--headless` only serves. Projects can be passed on the command line.
+- API: active document, view state, projects, log folder; `settings.updated` and `project.updated` events; selections by retention time in `Session.select`; libraries passed as `SpectralLibrary` objects.
 
 ### Changed
 
@@ -34,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The app integrates only masks that changed, so an edit takes about the same time with any number of masks.
 - `pygcxgc-msviewer` and `pygcxgc-maskcreator` are deprecated and start the app; `--legacy` runs the Tk tools.
 - The app searches the selected point again when libraries or search settings change, and after re-processing.
+- The app settings of the old GCxGC-MS viewer (`ms_viewer.json`) are migrated; library caches stay in `~/.cache/pyGCxGC` on Linux and use the platform's cache folder elsewhere.
+- `pygcxgc` opens the app by default (`--open` is no longer needed).
 
 ### Fixed
 

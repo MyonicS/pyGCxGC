@@ -7,9 +7,11 @@ import { HttpTransport, takeToken } from '@/api/transport'
 import { forgetImage } from '@/store/images'
 import { connect, failStartup, useSession } from '@/store/session'
 import { forgetDocument } from '@/store/view'
+import { startViewSync } from '@/store/viewSync'
 
 import { App } from './App'
 
+startViewSync()
 const token = takeToken()
 if (token) void connect(new HttpTransport(token))
 else failStartup('This page was opened without an access token.')

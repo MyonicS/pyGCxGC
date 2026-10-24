@@ -22,7 +22,8 @@ State changes are published to subscribers (:meth:`Session.subscribe`) as
 dicts with ``type``, ``document_id`` and a monotonically increasing
 ``revision``. Types: ``job.progress``, ``job.done``, ``job.failed``,
 ``document.updated``, ``masks.updated``, ``peaks.updated``,
-``library.updated``, ``selection.changed``.
+``library.updated``, ``selection.changed``, ``settings.updated`` and
+``project.updated``.
 
 Examples
 --------
@@ -41,6 +42,8 @@ import csv
 import io
 import itertools
 import json
+import logging
+import os
 import sqlite3
 import threading
 import time
@@ -51,10 +54,12 @@ import zipfile
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, fields, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
+import pandas as pd
 
 from pyGCxGC.main import GCxGC_FID
 from pyGCxGC.masks import (
@@ -93,9 +98,13 @@ from pyGCxGC.processing import integrate_2D
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import pandas as pd
+log = logging.getLogger("pyGCxGC.app")
 
 MAX_UNDO = 200
+MAX_VIEW_BYTES = 256_000  # view state stored per document (opaque to the session)
+PROJECT_FORMAT = "pygcxgc-project"
+PROJECT_VERSION = 1
+PROJECT_SUFFIX = ".gcxgc"
 IDENTITY_COLUMNS = (
     "name",
     "match",
@@ -265,16 +274,23 @@ class Job:
         self.status = status
         self.error = error
         self.traceback = tb
+        if status == "failed":
+            log.error("Job %r failed: %s\n%s", self.label, error, tb or "")
         kind = "job.done" if status == "done" else "job.failed"
         self._session.emit(kind, self.document_id, job=self.to_dict())
 
 
 # ------------------------------------------------------------------ settings
 class Settings:
-    """User settings (a nested dict), optionally persisted as JSON."""
+    """
+    User settings (a nested dict), optionally persisted as JSON.
+
+    ``on_change(settings)`` is called after every update.
+    """
 
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else None
+        self.on_change: Callable[[dict], None] | None = None
         self._lock = threading.Lock()
         self._data = copy.deepcopy(DEFAULT_SETTINGS)
         if self.path and self.path.exists():
@@ -294,7 +310,10 @@ class Settings:
         with self._lock:
             _deep_update(self._data, copy.deepcopy(changes))
             self._save()
-            return copy.deepcopy(self._data)
+            data = copy.deepcopy(self._data)
+        if self.on_change is not None:
+            self.on_change(copy.deepcopy(data))
+        return data
 
     def _save(self) -> None:
         if self.path is None:
@@ -468,6 +487,8 @@ class Document:
         self._integration_cache: tuple | None = None
         self._volume_cache: dict = {}
         self.warnings: list[str] = []
+        # display and zoom of the frontend (opaque here), saved in projects
+        self.view: dict | None = None
 
     @property
     def grid(self) -> Grid:
@@ -502,6 +523,7 @@ class Document:
             "summary": self.summary(),
             "warnings": list(self.warnings),
             "n_masks": len(self.masks),
+            "view": self.view,
         }
 
 
@@ -711,6 +733,7 @@ LICENCES = {
     "mona": "MoNA: open data, mostly CC BY / CC BY-SA (see each record).",
     "msp": "",
     "npz": "",
+    "python": "Loaded from Python (not remembered).",
 }
 
 
@@ -720,7 +743,7 @@ class LibraryRecord:
 
     id: str
     path: str
-    source: str  # nist | mona | msp | npz
+    source: str  # nist | mona | msp | npz | python
     name: str
     status: str = "loading"  # loading | ready | failed
     active: bool = False
@@ -780,6 +803,9 @@ class Session:
         max_workers: int = 4,
     ):
         self.settings = Settings(settings_path)
+        self.settings.on_change = lambda data: self.emit(
+            "settings.updated", None, settings=data
+        )
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.documents: dict[str, Document] = {}
         self.libraries: dict[str, LibraryRecord] = {}
@@ -793,6 +819,8 @@ class Session:
         self._structure_cache: StructureCache | None = None
         self._structure_jobs: dict[tuple, Job] = {}
         self._svg_cache: OrderedDict = OrderedDict()
+        self._active_id: str | None = None
+        self.project_path: str | None = None
 
     def close(self) -> None:
         """Cancel running jobs and stop the worker pool."""
@@ -887,7 +915,19 @@ class Session:
             "libraries": [r.info() for r in self.libraries.values()],
             "jobs": [j.to_dict() for j in self.jobs.values() if not j.done],
             "settings": self.settings.as_dict(),
+            "active_document_id": self.active_document_id,
+            "project": self.project_info(),
+            "files": {
+                "settings": str(self.settings.path) if self.settings.path else None,
+                "cache": str(self.cache_dir or default_cache_dir()),
+                "logs": str(self.log_dir),
+            },
         }
+
+    @property
+    def log_dir(self) -> Path:
+        """Folder of the log files (``logs`` in the cache folder)."""
+        return (self.cache_dir or default_cache_dir()) / "logs"
 
     def update_settings(self, changes: dict) -> dict:
         """Merge ``changes``; new search settings re-search the selections."""
@@ -906,6 +946,40 @@ class Session:
         if kind is not None and doc.kind != kind:
             raise InvalidRequest(f"This needs a {kind.upper()} document")
         return doc
+
+    @property
+    def active_document_id(self) -> str | None:
+        """
+        The document the user works on: the one shown by the app (it reports
+        tab switches), else the last one opened.
+        """
+        with self._lock:
+            if self._active_id in self.documents:
+                return self._active_id
+            return next(reversed(self.documents), None)
+
+    def set_active_document(self, document_id: str) -> None:
+        """Make a document the active one; the app switches to its tab."""
+        doc = self.document(document_id)
+        with self._lock:
+            if self._active_id == doc.id:
+                return
+            self._active_id = doc.id
+        self.emit("document.updated", doc.id, change="activated", document=doc.info())
+
+    def set_view(self, document_id: str, view: dict | None) -> None:
+        """
+        Store the frontend's view state of a document (display settings and
+        zoom). The session does not interpret it; projects save it.
+        """
+        doc = self.document(document_id)
+        if view is not None:
+            if not isinstance(view, dict) or not _is_jsonable(view):
+                raise InvalidRequest("The view state must be a JSON object")
+            if len(json.dumps(view)) > MAX_VIEW_BYTES:
+                raise InvalidRequest("The view state is too large")
+        with doc.lock:
+            doc.view = copy.deepcopy(view)
 
     def open_document(
         self,
@@ -968,8 +1042,8 @@ class Session:
         with self._lock:
             self.documents[doc.id] = doc
         if doc.path:
-            recent = [p for p in self.settings.get("recent_files", []) if p != doc.path]
-            self.settings.update({"recent_files": [doc.path, *recent][:10]})
+            self._remember_file(doc.path)
+        log.info("Opened %s (%s)", doc.path or doc.name, doc.kind)
         self.emit("document.updated", doc.id, change="opened", document=doc.info())
         return {"document_id": doc.id}
 
@@ -977,6 +1051,8 @@ class Session:
         with self._lock:
             doc = self.document(document_id)
             del self.documents[document_id]
+            if self._active_id == document_id:
+                self._active_id = None
         self.emit("document.updated", doc.id, change="closed", document=None)
 
     def update_document(
@@ -1075,14 +1151,21 @@ class Session:
         snap: bool = True,
         n_average: int = 3,
         scan: int | None = None,
+        rt1: float | None = None,
+        rt2: float | None = None,
     ) -> SpectrumResult:
         """
-        Spectrum at a pixel or scan (raw and background corrected).
+        Spectrum at a pixel, a retention time or a scan (raw and background
+        corrected).
 
-        Without a point, the current selection's spectrum is returned.
+        The point is a pixel (``rt2_index``, ``mod_index``), retention times
+        (``rt1`` in min, ``rt2`` in s) or a ``scan``. Without a point, the
+        current selection's spectrum is returned.
         """
         doc = self.document(document_id, "ms")
         assert isinstance(doc, MSDocument)
+        if rt1 is not None or rt2 is not None:
+            rt2_index, mod_index = self.pixel_at(doc.id, rt1, rt2)
         if rt2_index is None and mod_index is None and scan is None:
             if doc.selection is None:
                 raise InvalidRequest("No point selected")
@@ -1116,6 +1199,21 @@ class Session:
             raw,
             corrected,
         )
+
+    def pixel_at(
+        self, document_id: str, rt1: float | None, rt2: float | None
+    ) -> tuple[int, int]:
+        """Pixel ``(rt2_index, mod_index)`` containing RT1 (min) and RT2 (s)."""
+        if rt1 is None or rt2 is None:
+            raise InvalidRequest("Give both rt1 (min) and rt2 (s)")
+        g = self.document(document_id).grid
+        col = int(np.floor((float(rt1) - g.rt1_start) / (g.modulation_time / 60.0)))
+        row = int(np.floor((float(rt2) - g.rt2_start) / g.sampling_interval))
+        if not (0 <= col < g.n_mod and 0 <= row < g.n_rt2):
+            raise InvalidRequest(
+                f"RT1 {rt1} min, RT2 {rt2} s is outside the chromatogram"
+            )
+        return row, col
 
     def select(
         self, document_id: str, mask_id: str | None = None, **point
@@ -1917,21 +2015,28 @@ class Session:
 
     # ------------------------------------------------------------ libraries
     def add_library(
-        self, path: str | Path, activate: bool = True, exclusive: bool = False
+        self,
+        path: str | Path | SpectralLibrary,
+        activate: bool = True,
+        exclusive: bool = False,
     ) -> Job:
         """
         Load a spectral library (job; the result is ``{"library_id": ...}``).
 
         Parameters
         ----------
-        path : str or Path
-            NIST ``MAINLIB`` folder, ``.msp``/``.zip``/``.npz`` file, or
-            ``"mona"`` to download the open MoNA GC-MS library.
+        path : str, Path or SpectralLibrary
+            NIST ``MAINLIB`` folder, ``.msp``/``.zip``/``.npz`` file,
+            ``"mona"`` to download the open MoNA GC-MS library, or a loaded
+            :class:`~pyGCxGC.ms.library.SpectralLibrary` (e.g. from a
+            notebook; it is not remembered in the settings).
         activate : bool, default True
             Search the library once it is loaded.
         exclusive : bool, default False
             Deactivate the other libraries when this one is activated.
         """
+        if isinstance(path, SpectralLibrary):
+            return self._add_library_object(path, activate, exclusive)
         download = str(path).lower() == "mona"
         if not download:
             path = Path(path).expanduser().resolve()
@@ -1987,6 +2092,24 @@ class Session:
             return {"library_id": rec.id}
 
         return self.submit("library", f"Loading library {name}", work)
+
+    def _add_library_object(
+        self, library: SpectralLibrary, activate: bool, exclusive: bool
+    ) -> Job:
+        for rec in self.libraries.values():
+            if rec.library is library:
+                break
+        else:
+            name = library.name or "Library"
+            rec = LibraryRecord(_new_id(), "", "python", name, status="ready")
+            rec.library = library
+            with self._lock:
+                self.libraries[rec.id] = rec
+        if activate:
+            self.set_library_active(rec.id, True, exclusive)
+        else:
+            self.emit("library.updated", None, library=rec.info())
+        return self.submit("library", rec.name, lambda _j: {"library_id": rec.id})
 
     def restore_libraries(self) -> list[Job]:
         """Load the libraries saved in the settings (at start-up)."""
@@ -2420,6 +2543,316 @@ class Session:
             "batch", f"Batch integration of {len(files)} files", work, doc.id
         )
 
+    # ------------------------------------------------------------ projects
+    def project_info(self) -> dict | None:
+        """``{"path", "name"}`` of the project last saved or opened."""
+        if not self.project_path:
+            return None
+        return {"path": self.project_path, "name": Path(self.project_path).stem}
+
+    def project_dict(self, path: str | Path | None = None) -> tuple[dict, list[str]]:
+        """
+        The session as a project (a JSON-friendly dict) and warnings.
+
+        File paths are stored relative to the folder of ``path`` (and
+        absolute as a fallback). Documents that were not opened from a file
+        cannot be saved; they are listed in the warnings.
+        """
+        import pyGCxGC
+
+        base = Path(path).expanduser().resolve().parent if path else None
+        notes: list[str] = []
+        documents = []
+        for doc in list(self.documents.values()):
+            if not doc.path:
+                notes.append(f"{doc.name} was not opened from a file and is not saved")
+                continue
+            with doc.lock:
+                entry: dict[str, Any] = {
+                    "id": doc.id,
+                    "kind": doc.kind,
+                    "name": doc.name,
+                    **_project_path(doc.path, base),
+                    "params": asdict(doc._params),
+                    "masks": doc.masks.to_dict(),
+                    "view": copy.deepcopy(doc.view),
+                }
+                if isinstance(doc, MSDocument):
+                    entry.update(
+                        signal=doc.signal,
+                        mz=list(doc.mz),
+                        selection=_selection_state(doc.selection),
+                        peaks=self._peaks_state(doc),
+                    )
+            documents.append(entry)
+        active = self.active_document_id
+        project = {
+            "format": PROJECT_FORMAT,
+            "version": PROJECT_VERSION,
+            "app_version": pyGCxGC.__version__,
+            "saved": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "documents": documents,
+            "active_document": active
+            if any(d["id"] == active for d in documents)
+            else None,
+            "libraries": [
+                {"name": r.name, "active": r.active, **_project_path(r.path, base)}
+                for r in self.libraries.values()
+                if r.path and r.status != "failed"
+            ],
+            "ui": {"layouts": self.settings.get("ui", {}).get("layouts", {})},
+        }
+        return project, notes
+
+    def save_project(
+        self, path: str | Path | None = None, ui: dict | None = None
+    ) -> dict:
+        """
+        Save the session as a project file (``*.gcxgc``, spec §9).
+
+        A project holds file paths, never data: the documents with their
+        processing parameters, signal, mask sets, peak tables (with the
+        user's edits), selected points and view state, the libraries and
+        the layout.
+
+        Parameters
+        ----------
+        path : str or Path, optional
+            Default: the project last saved or opened. ``.gcxgc`` is added
+            when missing.
+        ui : dict, optional
+            Frontend state to store with the project (e.g. ``layouts``).
+
+        Returns
+        -------
+        dict
+            ``{"path": ..., "warnings": [...], "project": project_info}``.
+        """
+        if path is None:
+            if not self.project_path:
+                raise InvalidRequest("Choose a file name for the project")
+            path = self.project_path
+        path = Path(path).expanduser()
+        if path.suffix.lower() != PROJECT_SUFFIX:
+            path = path.with_name(path.name + PROJECT_SUFFIX)
+        project, notes = self.project_dict(path)
+        if ui:
+            project["ui"].update(copy.deepcopy(ui))
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(json.dumps(project, indent=1), "utf-8")
+            tmp.replace(path)
+        except OSError as exc:
+            raise InvalidRequest(f"Cannot write {path}: {exc}") from exc
+        self.project_path = str(path.resolve())
+        self._remember_file(self.project_path)
+        log.info("Saved project %s", path)
+        info = self.project_info()
+        self.emit("project.updated", None, change="saved", project=info)
+        return {"path": self.project_path, "warnings": notes, "project": info}
+
+    def open_project(self, path: str | Path, replace_all: bool = True) -> Job:
+        """
+        Open a project file (job).
+
+        The documents are opened again from their files (paths relative to
+        the project first), then masks, peak tables and selections are
+        restored. Missing files and libraries are reported as job warnings
+        and skipped. Job result: ``{"document_ids": [...], "project": ...}``.
+
+        Parameters
+        ----------
+        replace_all : bool, default True
+            Close the open documents first.
+        """
+        path = Path(path).expanduser()
+        project = read_project(path)
+        base = path.resolve().parent
+
+        def work(job: Job) -> dict:
+            if replace_all:
+                for doc_id in list(self.documents):
+                    self.close_document(doc_id)
+            library_jobs = []
+            for lib in project.get("libraries", []):
+                file = _project_file(lib, base, kind="any")
+                if file is None:
+                    where = lib.get("path") or lib.get("absolute_path")
+                    job.warnings.append(f"Library not found: {where}")
+                    continue
+                with contextlib.suppress(SessionError):
+                    library_jobs.append((lib, self.add_library(file, activate=False)))
+            entries = project.get("documents", [])
+            opened: list[tuple[dict, Document]] = []
+            for k, entry in enumerate(entries):
+                name = entry.get("name") or entry.get("path") or "document"
+                job.report(0.85 * k / max(len(entries), 1), f"Opening {name}")
+                file = _project_file(entry, base)
+                if file is None:
+                    job.warnings.append(f"{name}: file not found ({entry.get('path')})")
+                    continue
+                try:
+                    doc = self._project_document(entry, file, job)
+                except JobCancelled:
+                    raise
+                except Exception as exc:  # report the file, go on with the next
+                    job.warnings.append(f"{name}: {_error_text(exc)}")
+                    continue
+                self._add(doc)
+                opened.append((entry, doc))
+            job.report(0.9, "Loading libraries")
+            wanted = set()
+            for lib, lib_job in library_jobs:
+                try:
+                    library_id = lib_job.wait(600)["library_id"]
+                except (SessionError, JobCancelled, TimeoutError) as exc:
+                    job.warnings.append(f"Library {lib.get('name')}: {exc}")
+                    continue
+                if lib.get("active"):
+                    wanted.add(library_id)
+            if library_jobs:  # the libraries active when the project was saved
+                for rec in list(self.libraries.values()):
+                    if rec.active != (rec.id in wanted):
+                        self.set_library_active(rec.id, rec.id in wanted)
+            for entry, doc in opened:
+                if not isinstance(doc, MSDocument):
+                    continue
+                if entry.get("peaks"):
+                    self._restore_peaks(doc, entry["peaks"])
+                if entry.get("selection"):
+                    self._restore_selection(doc, entry["selection"], job)
+            layouts = project.get("ui", {}).get("layouts")
+            if isinstance(layouts, dict) and layouts:
+                self.settings.update({"ui": {"layouts": layouts}})
+            ids = {entry.get("id"): doc.id for entry, doc in opened}
+            if project.get("active_document") in ids:
+                self.set_active_document(ids[project["active_document"]])
+            self.project_path = str(path.resolve())
+            self._remember_file(self.project_path)
+            log.info("Opened project %s", path)
+            info = self.project_info()
+            self.emit("project.updated", None, change="opened", project=info)
+            return {"document_ids": [d.id for _, d in opened], "project": info}
+
+        return self.submit("project", f"Opening project {path.name}", work)
+
+    @classmethod
+    def load(cls, path: str | Path, timeout: float | None = None, **kwargs) -> Session:
+        """
+        A new session with a project opened (blocks until it is loaded).
+
+        Warnings about missing files are issued as Python warnings.
+        ``kwargs`` go to :class:`Session` (e.g. ``settings_path``).
+
+        Examples
+        --------
+        >>> session = Session.load("samples.gcxgc")  # doctest: +SKIP
+        >>> session.masks(session.active_document_id).integration(...)  # doctest: +SKIP
+        """
+        session = cls(**kwargs)
+        try:
+            job = session.open_project(path)
+            session.wait(job, timeout)
+        except BaseException:
+            session.close()
+            raise
+        for note in job.warnings:
+            warnings.warn(note, stacklevel=2)
+        return session
+
+    def close_project(self) -> None:
+        """Close all documents and forget the project path."""
+        for doc_id in list(self.documents):
+            self.close_document(doc_id)
+        self.project_path = None
+        self.emit("project.updated", None, change="closed", project=None)
+
+    def _project_document(self, entry: dict, file: Path, job: Job) -> Document:
+        kind = entry.get("kind")
+        params = dict(entry.get("params") or {})
+        if kind == "fid":
+            doc: Document = FIDDocument.open(file, _apply_params(FIDParams(), params))
+        elif kind == "ms":
+            doc = MSDocument.open(file, _apply_params(MSParams(), params))
+            assert isinstance(doc, MSDocument)
+            mz = sorted({int(m) for m in entry.get("mz") or []})
+            lo, hi = doc.data.mass_range
+            if entry.get("signal") == "eic" and mz:
+                if all(lo <= m <= hi for m in mz):
+                    doc.signal, doc.mz = "eic", mz
+                else:
+                    job.warnings.append(f"{doc.name}: EIC m/z {mz} outside {lo}-{hi}")
+        else:
+            raise InvalidRequest(f"Unknown document kind {kind!r}")
+        if entry.get("name"):
+            doc.name = str(entry["name"])
+        if entry.get("masks"):
+            masks = MaskSet.from_dict(entry["masks"])
+            masks.grid = doc.grid
+            doc.masks = masks
+        view = entry.get("view")
+        doc.view = view if isinstance(view, dict) else None
+        return doc
+
+    def _peaks_state(self, doc: MSDocument) -> dict | None:
+        if doc.peaks is None:
+            return None
+        info = {k: v for k, v in doc.peaks_info.items() if k != "library_ids"}
+        paths = [
+            self.libraries[i].path
+            for i in doc.peaks_info.get("library_ids", [])
+            if i in self.libraries
+        ]
+        return {
+            "columns": [str(c) for c in doc.peaks.columns],
+            "data": json.loads(doc.peaks.to_json(orient="values", double_precision=15)),
+            "info": info,
+            "library_paths": paths,
+            # False when the data were re-processed after detection
+            "positions_current": doc._peaks_data is doc.data,
+        }
+
+    def _restore_peaks(self, doc: MSDocument, state: dict) -> None:
+        table = pd.DataFrame(state.get("data") or [], columns=state.get("columns"))
+        info = dict(state.get("info") or {})
+        paths = state.get("library_paths") or []
+        by_path = {r.path: r.id for r in self.libraries.values() if r.path}
+        info["library_ids"] = [by_path[p] for p in paths if p in by_path]
+        with doc.lock:
+            doc.peaks = table
+            doc.peak_hits = {}
+            doc._peaks_data = doc.data if state.get("positions_current", True) else None
+            doc.peaks_info = info
+        active = {r.id for r in self.active_libraries()}
+        used = set(info["library_ids"])
+        if len(used) < len(paths) or (used and used != active):
+            names = ", ".join(info.get("libraries", []))
+            self._mark_peaks_stale(doc, f"Identified with {names}")
+        self.emit("peaks.updated", doc.id, n_peaks=len(table), stale=info.get("stale"))
+
+    def _restore_selection(self, doc: MSDocument, state: dict, job: Job) -> None:
+        try:
+            if state.get("mask_id"):
+                self.select(doc.id, mask_id=state["mask_id"])
+            else:
+                self.select(
+                    doc.id,
+                    scan=int(state["scan"]),
+                    n_average=int(state.get("n_average", 3)),
+                    snap=bool(state.get("snap", True)),
+                )
+            if state.get("searched"):
+                self.search(doc.id)
+        except (SessionError, KeyError, TypeError, ValueError) as exc:
+            job.warnings.append(
+                f"{doc.name}: the selected point was not restored ({exc})"
+            )
+
+    def _remember_file(self, path: str) -> None:
+        recent = [p for p in self.settings.get("recent_files", []) if p != path]
+        self.settings.update({"recent_files": [path, *recent][:10]})
+
     # ------------------------------------------------------------ files
     @staticmethod
     def list_dir(path: str | Path | None = None, show_hidden: bool = False) -> dict:
@@ -2467,6 +2900,9 @@ class Session:
         if not p.is_file():
             info["error"] = f"File not found: {p}"
             return info
+        if is_project_file(p):
+            info.update(kind="project", size=p.stat().st_size)
+            return info
         try:
             info["size"] = p.stat().st_size
             info["kind"] = detect_kind(p)
@@ -2483,6 +2919,8 @@ class Session:
 def detect_kind(path: str | Path) -> str:
     """``"fid"`` or ``"ms"`` from the file contents."""
     path = Path(path)
+    if is_project_file(path):
+        raise InvalidRequest(f"{path.name} is a pyGCxGC project: open it as a project")
     with path.open("rb") as fh:
         head = fh.read(65536)
     if head[:3] == b"CDF":
@@ -2507,6 +2945,73 @@ def detect_kind(path: str | Path) -> str:
                 return "ms"  # numeric column names are m/z values
         return "fid"
     raise InvalidRequest(f"Unsupported file type: {path.name}")
+
+
+def is_project_file(path: str | Path) -> bool:
+    """Whether ``path`` is a project file (``*.gcxgc``)."""
+    return Path(path).suffix.lower() == PROJECT_SUFFIX
+
+
+def read_project(path: str | Path) -> dict:
+    """Read and check a project file (raises :class:`InvalidRequest`)."""
+    path = Path(path).expanduser()
+    if not path.is_file():
+        raise InvalidRequest(f"File not found: {path}")
+    try:
+        project = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise InvalidRequest(f"{path.name} is not a pyGCxGC project: {exc}") from exc
+    if not isinstance(project, dict) or project.get("format") != PROJECT_FORMAT:
+        raise InvalidRequest(f"{path.name} is not a pyGCxGC project")
+    if int(project.get("version", 0)) > PROJECT_VERSION:
+        raise InvalidRequest(
+            f"{path.name} was saved by a newer pyGCxGC (project format "
+            f"{project['version']}); please update pyGCxGC"
+        )
+    if not isinstance(project.get("documents", []), list):
+        raise InvalidRequest(f"{path.name}: invalid document list")
+    return project
+
+
+def _project_path(path: str, base: Path | None) -> dict:
+    """A path for a project: relative to ``base`` (if possible) and absolute."""
+    p = Path(path).expanduser().resolve()
+    relative = None
+    if base is not None:
+        with contextlib.suppress(ValueError):  # another drive (Windows)
+            relative = Path(os.path.relpath(p, base)).as_posix()
+    return {"path": relative or str(p), "absolute_path": str(p)}
+
+
+def _project_file(entry: dict, base: Path, kind: str = "file") -> Path | None:
+    """The file of a project entry: the relative path first, then the absolute."""
+    for candidate in (entry.get("path"), entry.get("absolute_path")):
+        if not candidate:
+            continue
+        p = Path(candidate).expanduser()
+        if not p.is_absolute():
+            p = base / p
+        if p.is_file() or (kind == "any" and p.exists()):
+            return p.resolve()
+    return None
+
+
+def _selection_state(selection: Selection | None) -> dict | None:
+    """What re-creates a selection: the scan (or the mask) and whether it was searched."""
+    if selection is None:
+        return None
+    searched = selection.hits is not None
+    if selection.region is not None:
+        return {"mask_id": selection.region["mask_id"], "searched": searched}
+    s = selection.spectrum
+    if s.scan < 0:  # a spectrum searched by value, not a point
+        return None
+    return {
+        "scan": s.scan,
+        "n_average": s.n_average,
+        "snap": s.snap,
+        "searched": searched,
+    }
 
 
 def _overlaps(blocks: list[tuple[Mask, tuple | None, np.ndarray | None]]) -> list[dict]:
@@ -2587,4 +3092,6 @@ __all__ = [
     "SpectrumResult",
     "detect_kind",
     "hit_dict",
+    "is_project_file",
+    "read_project",
 ]

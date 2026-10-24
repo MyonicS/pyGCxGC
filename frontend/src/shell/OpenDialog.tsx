@@ -1,7 +1,7 @@
 /**
  * Open dialog (spec SHELL-5, browser/notebook mode). Selecting a file probes
  * it: FID files ask for the modulation time, MS files may leave it empty
- * (estimated from the TIC).
+ * (estimated from the TIC). Projects (`.gcxgc`) open as they are.
  */
 
 import { Loader2 } from 'lucide-react'
@@ -58,7 +58,8 @@ function OpenDialogBody({ preselect }: { preselect: string | null }) {
   const probe = probeState && probeState.path === selected ? probeState : null
 
   const valid = (p: FileProbe | null, text: string) =>
-    Boolean(p && !p.error) && (text.trim() === '' ? p?.kind !== 'fid' : Number(text) > 0)
+    Boolean(p && !p.error) &&
+    (p?.kind === 'project' || (text.trim() === '' ? p?.kind !== 'fid' : Number(text) > 0))
   const canOpen = Boolean(selected) && valid(probe, modulation) && !opening
 
   const doOpen = async (p: FileProbe | null = probe, text = modulation) => {
@@ -66,7 +67,7 @@ function OpenDialogBody({ preselect }: { preselect: string | null }) {
     setOpening(true)
     if (folder) void updateSettings({ ui: { last_folder: folder } })
     const seconds = Number(text)
-    const params = text.trim() ? { modulation_time: seconds } : {}
+    const params = text.trim() && p.kind !== 'project' ? { modulation_time: seconds } : {}
     if (p.kind === 'fid' && remember && seconds > 0) rememberModulationTime(seconds)
     hideOpenDialog()
     await openPath(p.path, params)
@@ -102,9 +103,9 @@ function OpenDialogBody({ preselect }: { preselect: string | null }) {
       data-testid="open-dialog"
     >
       <DialogHeader>
-        <DialogTitle>Open chromatogram</DialogTitle>
+        <DialogTitle>Open</DialogTitle>
         <DialogDescription>
-          OpenChrom CSV (FID or MS), ANDI-MS .cdf or JCAMP-DX files.
+          OpenChrom CSV (FID or MS), ANDI-MS .cdf or JCAMP-DX files, or a pyGCxGC project (.gcxgc).
         </DialogDescription>
       </DialogHeader>
       <FileBrowser
@@ -130,7 +131,12 @@ function OpenDialogBody({ preselect }: { preselect: string | null }) {
           </div>
         )}
         {probe?.error && <p className="text-xs text-destructive">{probe.error}</p>}
-        {probe && !probe.error && (
+        {probe?.kind === 'project' && (
+          <p className="text-xs text-muted-foreground">
+            Opens the project&apos;s files with their masks, peak tables and view.
+          </p>
+        )}
+        {probe && !probe.error && probe.kind !== 'project' && (
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
               <Label htmlFor="open-mod" className="text-xs">

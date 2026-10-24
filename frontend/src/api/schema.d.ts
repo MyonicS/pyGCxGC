@@ -397,6 +397,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/{doc_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set View
+         * @description Store the frontend's view state (display, zoom); saved in projects.
+         */
+        put: operations["set_view_api_documents__doc_id__view_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/fs": {
         parameters: {
             query?: never;
@@ -549,6 +569,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/logs/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Log Folder
+         * @description Show the log folder in the system's file manager (spec FILE-2).
+         */
+        post: operations["open_log_folder_api_logs_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close Project
+         * @description Close all documents and forget the project.
+         */
+        post: operations["close_project_api_project_close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Project
+         * @description Open a project file (job; result ``{"document_ids", "project"}``).
+         */
+        post: operations["open_project_api_project_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Project
+         * @description Save the session as a project file (``*.gcxgc``).
+         */
+        post: operations["save_project_api_project_save_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -580,6 +680,26 @@ export interface paths {
         /** Get Session */
         get: operations["get_session_api_session_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Active Document
+         * @description Report the document shown by the app (Python clients see it as active).
+         */
+        put: operations["set_active_document_api_session_active_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -632,6 +752,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActiveDocument */
+        ActiveDocument: {
+            /** Document Id */
+            document_id: string;
+        };
         /** BatchRequest */
         BatchRequest: {
             /**
@@ -706,6 +831,13 @@ export interface components {
             signal?: ("tic" | "eic") | null;
             /** Summary */
             summary: string;
+            /**
+             * View
+             * @description View state stored by the frontend (e.g. from a project)
+             */
+            view?: {
+                [key: string]: unknown;
+            } | null;
             /** Warnings */
             warnings: string[];
         } & {
@@ -750,7 +882,7 @@ export interface components {
             /** Error */
             error: string | null;
             /** Kind */
-            kind: ("fid" | "ms") | null;
+            kind: ("fid" | "ms" | "project") | null;
             /** Name */
             name: string;
             /** Needs Modulation Time */
@@ -955,7 +1087,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "nist" | "mona" | "msp" | "npz";
+            source: "nist" | "mona" | "msp" | "npz" | "python";
             /**
              * Status
              * @enum {string}
@@ -1243,6 +1375,49 @@ export interface components {
              */
             solvent_cutoff?: number | null;
         };
+        /** ProjectInfo */
+        ProjectInfo: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProjectOpen */
+        ProjectOpen: {
+            /** Path */
+            path: string;
+            /**
+             * Replace
+             * @description Close the open documents first
+             * @default true
+             */
+            replace: boolean;
+        };
+        /** ProjectSave */
+        ProjectSave: {
+            /**
+             * Path
+             * @description Project file (.gcxgc); default: the current project
+             */
+            path?: string | null;
+            /**
+             * Ui
+             * @description Frontend state to store
+             */
+            ui?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ProjectSaved */
+        ProjectSaved: {
+            /** Path */
+            path: string;
+            project: components["schemas"]["ProjectInfo"];
+            /** Warnings */
+            warnings: string[];
+        };
         /** RectShape */
         RectShape: {
             /**
@@ -1406,14 +1581,32 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * SessionFiles
+         * @description Where the session keeps its files (spec FILE-1/2).
+         */
+        SessionFiles: {
+            /** Cache */
+            cache: string;
+            /** Logs */
+            logs: string;
+            /** Settings */
+            settings: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** SessionInfo */
         SessionInfo: {
+            /** Active Document Id */
+            active_document_id: string | null;
             /** Documents */
             documents: components["schemas"]["DocumentInfo"][];
+            files: components["schemas"]["SessionFiles"];
             /** Jobs */
             jobs: components["schemas"]["JobInfo"][];
             /** Libraries */
             libraries: components["schemas"]["LibraryInfo"][];
+            project: components["schemas"]["ProjectInfo"] | null;
             /** Revision */
             revision: number;
             /** Settings */
@@ -3000,6 +3193,59 @@ export interface operations {
             };
         };
     };
+    set_view_api_documents__doc_id__view_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                } | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_files_api_fs_get: {
         parameters: {
             query?: {
@@ -3526,6 +3772,180 @@ export interface operations {
             };
         };
     };
+    open_log_folder_api_logs_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    close_project_api_project_close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    open_project_api_project_open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectOpen"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStarted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_project_api_project_save_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectSaved"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_api_search_post: {
         parameters: {
             query?: never;
@@ -3611,6 +4031,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    set_active_document_api_session_active_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActiveDocument"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
