@@ -13,6 +13,10 @@ import type {
   FsListing,
   ImageHeader,
   JobInfo,
+  LibrarySpectrumHeader,
+  PeakEdit,
+  SpectrumHeader,
+  StructureInfo,
   JobStarted,
   LibraryInfo,
   MaskSetInfo,
@@ -114,8 +118,53 @@ export class Api {
     })
   }
 
+  /** Search the selection (or select `point` first) against the active libraries. */
+  search(docId: string, point?: Omit<SelectRequest, 'scan' | 'mask_id'>) {
+    return this.transport.request<SelectionInfo>('POST', '/api/search', {
+      body: { document_id: docId, ...point },
+    })
+  }
+
+  setSignal(docId: string, signal: 'tic' | 'eic', mz: number[] = []) {
+    return this.transport.request<JobStarted>('PUT', `/api/documents/${enc(docId)}/signal`, {
+      body: { signal, mz },
+    })
+  }
+
+  /** Spectrum of the selection: rows of `[mz, raw, corrected]`. */
+  async spectrum(docId: string, signal?: AbortSignal) {
+    const buffer = await this.transport.request<ArrayBuffer>(
+      'GET',
+      `/api/documents/${enc(docId)}/spectrum`,
+      { binary: true, signal },
+    )
+    const { header, data } = decodeArray<SpectrumHeader>(buffer)
+    if (!(data instanceof Float32Array))
+      throw new Error(`Unexpected spectrum dtype ${header.dtype}`)
+    return { header, data }
+  }
+
   peaks(docId: string) {
     return this.get<PeakTable | null>(`/api/documents/${enc(docId)}/peaks`)
+  }
+
+  detectPeaks(docId: string, req: { snr: number; identify?: boolean; n_average?: number }) {
+    return this.transport.request<JobStarted>('POST', `/api/documents/${enc(docId)}/peaks`, {
+      body: req,
+    })
+  }
+
+  reidentifyPeaks(docId: string) {
+    return this.transport.request<JobStarted>(
+      'POST',
+      `/api/documents/${enc(docId)}/peaks/reidentify`,
+    )
+  }
+
+  editPeaks(docId: string, edits: PeakEdit[]) {
+    return this.transport.request<void>('PATCH', `/api/documents/${enc(docId)}/peaks`, {
+      body: edits,
+    })
   }
 
   masks(docId: string) {
@@ -221,6 +270,46 @@ export class Api {
   // ---------------------------------------------------------------- libraries
   libraries() {
     return this.get<LibraryInfo[]>('/api/libraries')
+  }
+
+  /** Load a library (`"mona"` downloads MoNA GC-MS) as a job. */
+  addLibrary(path: string, activate = true, exclusive = false) {
+    return this.transport.request<JobStarted>('POST', '/api/libraries', {
+      body: { path, activate, exclusive },
+    })
+  }
+
+  removeLibrary(libraryId: string) {
+    return this.transport.request<void>('DELETE', `/api/libraries/${enc(libraryId)}`)
+  }
+
+  /** One library spectrum: rows of `[mz, intensity]`. */
+  async librarySpectrum(libraryId: string, index: number) {
+    const buffer = await this.transport.request<ArrayBuffer>(
+      'GET',
+      `/api/libraries/${enc(libraryId)}/spectra/${index}`,
+      { binary: true },
+    )
+    const { header, data } = decodeArray<LibrarySpectrumHeader>(buffer)
+    if (!(data instanceof Float32Array))
+      throw new Error(`Unexpected spectrum dtype ${header.dtype}`)
+    return { header, data }
+  }
+
+  structure(libraryId: string, index: number, online?: boolean) {
+    return this.get<StructureInfo>(`/api/libraries/${enc(libraryId)}/spectra/${index}/structure`, {
+      online,
+    })
+  }
+
+  /** SVG depiction of a resolved structure (text). */
+  async structureSvg(key: string, theme: 'light' | 'dark', w: number, h: number) {
+    const buffer = await this.transport.request<ArrayBuffer>(
+      'GET',
+      `/api/structures/${enc(key)}.svg`,
+      { binary: true, query: { theme, w, h } },
+    )
+    return new TextDecoder().decode(buffer)
   }
 
   setLibraryActive(libraryId: string, active: boolean, exclusive = false) {

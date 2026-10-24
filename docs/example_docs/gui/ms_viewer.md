@@ -4,10 +4,16 @@ pyGCxGC can read GCxGC-MS data, show the 2D chromatogram, extract the mass
 spectrum of any point and identify it against a spectral library, either a
 licensed NIST MS Search library or open libraries in MSP format.
 
+!!! note "Deprecated"
+    The Tk viewer is replaced by [pyGCxGC Studio](app.md#gcxgc-ms), which does
+    everything described here. `pygcxgc-msviewer` now starts the app; add
+    `--legacy` for the Tk viewer while it still exists. The Python functions
+    described on this page are unchanged.
+
 ## Starting the viewer
 
 ```bash
-pygcxgc-msviewer path/to/run.cdf --library path/to/MSSEARCH/MAINLIB --modulation 20
+pygcxgc-msviewer --legacy path/to/run.cdf --library path/to/MSSEARCH/MAINLIB --modulation 20
 ```
 
 or from Python:

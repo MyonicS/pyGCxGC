@@ -60,7 +60,8 @@ documentation = "https://myonics.github.io/pyGCxGC/"
 changelog = "https://github.com/MyonicS/pyGCxGC/blob/main/CHANGELOG.md"
 
 [project.scripts]
-pygcxgc-maskcreator = "pyGCxGC.mask_gui:launch_mask_creator"
+pygcxgc = "pyGCxGC.app.__main__:main"
+pygcxgc-maskcreator = "pyGCxGC.mask_gui:main"
 pygcxgc-msviewer = "pyGCxGC.gui.ms_viewer:main"
 
 [tool.setuptools.package-data]

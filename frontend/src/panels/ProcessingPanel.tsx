@@ -38,17 +38,30 @@ const FID_NORMALIZE = [
   ['max', 'Maximum'],
   ['none', 'None'],
 ] as const
-const MS_BASELINES = [
+const MS_IMAGE_BASELINES = [
   ['modulation_percentile', 'Modulation percentile'],
   ['rolling_percentile', 'Rolling percentile'],
   ['none', 'None'],
+] as const
+const MS_BASELINES = [
+  ...MS_IMAGE_BASELINES,
+  ['local', 'Local (spectra only)'],
+  ['reference', 'Reference point (spectra only)'],
 ] as const
 
 interface MSBaseline {
   mode: string
   percentile?: number
   window?: number
+  gap?: number
+  width?: number
+  scan?: number
+  n_scans?: number
+  image_model?: MSBaseline
 }
+
+/** Modes that change spectra only; the image uses `image_model` (spec BASE-2). */
+const spectraOnly = (mode: string) => mode === 'local' || mode === 'reference'
 
 function draftOf(doc: DocumentInfo): Draft {
   const p = doc.params as Record<string, unknown>
@@ -64,12 +77,21 @@ function draftOf(doc: DocumentInfo): Draft {
     }
   }
   const b = (p.baseline ?? {}) as MSBaseline
+  const mode = b.mode ?? 'modulation_percentile'
+  const image = spectraOnly(mode)
+    ? (b.image_model ?? { mode: 'modulation_percentile', percentile: 25 })
+    : b
   return {
     modulation_time: str(p.modulation_time),
     shift: str(p.shift ?? 0),
-    baseline: str(b.mode ?? 'modulation_percentile'),
-    percentile: str(b.percentile ?? 25),
-    window: str(b.window ?? 2),
+    baseline: str(mode),
+    image: str(image.mode),
+    percentile: str(image.percentile ?? 25),
+    window: str(image.window ?? 2),
+    gap: str(b.gap ?? 3),
+    width: str(b.width ?? 5),
+    ref_scan: str(b.scan ?? ''),
+    n_scans: str(b.n_scans ?? 3),
     snr: str(p.snr ?? 3),
   }
 }
@@ -98,13 +120,43 @@ function changesOf(doc: DocumentInfo, draft: Draft): ProcessingParams | string {
       if (changed('normalize')) out.normalize = draft.normalize
     } else {
       if (changed('snr')) out.snr = num('snr', 'S/N threshold', { min: 0 })
-      if (changed('baseline') || changed('percentile') || changed('window')) {
-        const baseline: MSBaseline = { mode: draft.baseline }
-        if (draft.baseline !== 'none') {
-          baseline.percentile = num('percentile', 'Percentile', { min: 0 })
+      const keys = [
+        'baseline',
+        'image',
+        'percentile',
+        'window',
+        'gap',
+        'width',
+        'ref_scan',
+        'n_scans',
+      ]
+      if (keys.some(changed)) {
+        const imageMode = spectraOnly(draft.baseline) ? draft.image : draft.baseline
+        const image: MSBaseline = { mode: imageMode }
+        if (imageMode !== 'none') image.percentile = num('percentile', 'Percentile', { min: 0 })
+        if (imageMode === 'rolling_percentile') {
+          image.window = num('window', 'Window', { int: true, min: 0 })
         }
-        if (draft.baseline === 'rolling_percentile') {
-          baseline.window = num('window', 'Window', { int: true, min: 0 })
+        let baseline = image
+        if (draft.baseline === 'local') {
+          baseline = {
+            mode: 'local',
+            gap: num('gap', 'Gap', { int: true, min: 1 }),
+            width: num('width', 'Width', { int: true, min: 1 }),
+            image_model: image,
+          }
+        } else if (draft.baseline === 'reference') {
+          if (draft.ref_scan.trim() === '') {
+            throw new Error(
+              'Reference scan: pick one with "Set as background" in the Spectrum panel',
+            )
+          }
+          baseline = {
+            mode: 'reference',
+            scan: num('ref_scan', 'Reference scan', { int: true, min: 0 }),
+            n_scans: num('n_scans', 'Scans', { int: true, min: 1 }),
+            image_model: image,
+          }
         }
         out.baseline = baseline as ProcessingParams['baseline']
       }
@@ -259,7 +311,60 @@ function ProcessingForm({ doc }: { doc: DocumentInfo }) {
             <Row label="Baseline">
               <Choice value={draft.baseline} options={MS_BASELINES} onChange={set('baseline')} />
             </Row>
-            {draft.baseline !== 'none' && (
+            {draft.baseline === 'local' && (
+              <>
+                <Row label="Gap" unit="scans" htmlFor="p-gap" hint="Point to background">
+                  <Input
+                    id="p-gap"
+                    value={draft.gap}
+                    onChange={(e) => set('gap')(e.target.value)}
+                    inputMode="numeric"
+                    className="h-7 font-mono text-xs tabular"
+                  />
+                </Row>
+                <Row label="Width" unit="scans" htmlFor="p-width" hint="Background on each side">
+                  <Input
+                    id="p-width"
+                    value={draft.width}
+                    onChange={(e) => set('width')(e.target.value)}
+                    inputMode="numeric"
+                    className="h-7 font-mono text-xs tabular"
+                  />
+                </Row>
+              </>
+            )}
+            {draft.baseline === 'reference' && (
+              <>
+                <Row
+                  label="Reference scan"
+                  htmlFor="p-ref"
+                  hint="Spectrum panel: Set as background"
+                >
+                  <Input
+                    id="p-ref"
+                    value={draft.ref_scan}
+                    onChange={(e) => set('ref_scan')(e.target.value)}
+                    inputMode="numeric"
+                    className="h-7 font-mono text-xs tabular"
+                  />
+                </Row>
+                <Row label="Scans" htmlFor="p-nscans" hint="Averaged around it">
+                  <Input
+                    id="p-nscans"
+                    value={draft.n_scans}
+                    onChange={(e) => set('n_scans')(e.target.value)}
+                    inputMode="numeric"
+                    className="h-7 font-mono text-xs tabular"
+                  />
+                </Row>
+              </>
+            )}
+            {spectraOnly(draft.baseline) && (
+              <Row label="Image baseline" hint="Image, EICs and peaks">
+                <Choice value={draft.image} options={MS_IMAGE_BASELINES} onChange={set('image')} />
+              </Row>
+            )}
+            {(spectraOnly(draft.baseline) ? draft.image : draft.baseline) !== 'none' && (
               <Row label="Percentile" htmlFor="p-pct">
                 <Input
                   id="p-pct"
@@ -270,7 +375,8 @@ function ProcessingForm({ doc }: { doc: DocumentInfo }) {
                 />
               </Row>
             )}
-            {draft.baseline === 'rolling_percentile' && (
+            {(spectraOnly(draft.baseline) ? draft.image : draft.baseline) ===
+              'rolling_percentile' && (
               <Row label="Window" unit="modulations" htmlFor="p-window">
                 <Input
                   id="p-window"

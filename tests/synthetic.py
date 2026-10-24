@@ -23,6 +23,18 @@ SPECTRA = {
     "Heavy": ({57: 100, 300: 500, 301: 300, 820: 999}, "C60H100", 820),
 }
 
+# structure identifiers as in a MoNA export; Decane has only a CAS number, so
+# its structure needs the online lookup
+IDENTIFIERS = {
+    "Toluene": {
+        "cas": "108-88-3",
+        "smiles": "Cc1ccccc1",
+        "inchikey": "YXFVVABEGXRONW-UHFFFAOYSA-N",
+    },
+    "Naphthalene": {"cas": "91-20-3", "smiles": "c1ccc2ccccc2c1"},
+    "Decane": {"cas": "124-18-5"},
+}
+
 
 def lib_from_dict(spectra=SPECTRA) -> SpectralLibrary:
     names = list(spectra)
@@ -34,6 +46,9 @@ def lib_from_dict(spectra=SPECTRA) -> SpectralLibrary:
         "name": names,
         "formula": [v[1] for v in spectra.values()],
         "mw": [v[2] for v in spectra.values()],
+        "cas": [IDENTIFIERS.get(n, {}).get("cas", "") for n in names],
+        "smiles": [IDENTIFIERS.get(n, {}).get("smiles", "") for n in names],
+        "inchikey": [IDENTIFIERS.get(n, {}).get("inchikey", "") for n in names],
     }
     return SpectralLibrary.from_spectra(pairs, name="test", metadata=metadata)
 

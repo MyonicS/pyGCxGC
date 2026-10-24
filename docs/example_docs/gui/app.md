@@ -2,13 +2,10 @@
 
 pyGCxGC Studio is the new graphical application for GCxGC data. It shows the
 2D chromatogram with GPU rendering, draws and integrates masks on FID and
-GCxGC-MS data, and will replace the Tk mask creator and MS viewer. All
-calculations run in the pyGCxGC Python library, so everything the app does
-can also be done in Python with the same results.
-
-The app is under development: GCxGC-MS spectra, library search and peak
-tables follow in the next milestone. Until then, use the
-[GCxGC-MS viewer](ms_viewer.md) for those.
+GCxGC-MS data, and identifies GCxGC-MS spectra and peaks with spectral
+libraries. It replaces the Tk mask creator and MS viewer. All calculations
+run in the pyGCxGC Python library, so everything the app does can also be
+done in Python with the same results.
 
 ## Starting the app
 
@@ -16,19 +13,25 @@ The app needs the `app` extra:
 
 ```bash
 pip install "pyGCxGC[app]"
-python -m pyGCxGC.app --open
+pygcxgc --open
 ```
+
+(`python -m pyGCxGC.app` is the same command.)
 
 `--open` opens the app in the web browser. Without it, the command prints the
 address (it contains an access token). Files can be passed directly:
 
 ```bash
-python -m pyGCxGC.app --open -m 20 run.csv
+pygcxgc --open -m 20 run.csv
+pygcxgc --open -l path/to/MSSEARCH/MAINLIB run.cdf
 ```
 
 `-m` sets the modulation time in seconds for all files given. FID files need
-one; for GCxGC-MS files it is estimated when omitted. The server only accepts
-connections from the same computer.
+one; for GCxGC-MS files it is estimated when omitted. `-l` loads a spectral
+library. The server only accepts connections from the same computer.
+
+`pygcxgc-maskcreator` and `pygcxgc-msviewer` are deprecated: they now start
+the app. Add `--legacy` to run the old Tk tools while they still exist.
 
 ## Opening files and the workspace
 
@@ -154,3 +157,99 @@ table = masks.integration(chrom)  # volume, percent and pixels, plus "unassigned
 ```
 
 See [Mask sets](../masks.md) for working with mask sets in Python.
+
+## GCxGC-MS
+
+The MS layout has the chromatogram on the left, the *Spectrum* panel (with
+*Processing* as a tab) and the *Match* panel on the right, and *Hits*,
+*Peaks*, *Libraries*, *Masks* and *Integration* as tabs below them.
+
+### Signal and spectra
+
+The *EIC* field in the chromatogram toolbar shows the extracted ion
+chromatogram of one or more m/z values (`91`, or `57 71 85`); clear it and
+press `Enter` to return to the TIC. Masks are integrated on the signal shown.
+
+Click the chromatogram (select tool) to select a point. With *snap to apex*
+on (the crosshair button in the Spectrum panel, on by default) the point
+moves to the most intense scan nearby; *Avg* sets how many scans are summed
+around it (default 3). The spectrum appears at once, the library hits right
+after.
+
+The Spectrum panel shows the background-corrected or raw spectrum, relative
+to the base peak (999) or in absolute counts. The most intense peaks are
+labelled; hover a peak for its m/z and intensity. The header gives RT1, RT2,
+scan, the averaged scans and the baseline in force. The `⋯` menu copies the
+spectrum as text (`m/z<TAB>intensity`), saves it as MSP, or uses the selected
+point as the background for spectra (see below).
+
+The summed spectrum of a mask is searched like a point: select the mask in
+the Masks panel and click the spectrum button in its toolbar.
+
+### Library hits and structures
+
+*Hits* lists the best 20 hits of the active libraries with match and reverse
+match factors, formula, MW, CAS, NIST number and library; click a column
+header to sort. Click a hit to show it in the *Match* panel: the unknown
+spectrum points up, the library spectrum down, and the structure is shown
+beside the plot (below it when the panel is narrow).
+
+Structures come from the library entry when it has one (MoNA records carry
+SMILES and InChI). Other compounds can be looked up at PubChem: the first
+time, the Match panel asks whether to do so. Only compound identifiers of
+library hits (InChIKey, CAS number, name) are sent, never spectra or file
+names. Answers are cached on your computer, so each compound is looked up
+once. Change the choice later under *Structures from PubChem* in the
+Libraries panel.
+
+### Libraries
+
+The *Libraries* panel lists the loaded libraries with their size, source,
+licence note and cache status. *Add…* takes a NIST MS Search `MAINLIB` (or
+`MSSEARCH`) folder or an MSP, zip or npz file; *Download MoNA GC-MS* fetches
+the open MoNA library. Libraries are converted once and cached, and they load
+again at the next start.
+
+Switch a library on or off to search it; several libraries can be searched
+together, and their hits are merged by match factor. The library button in
+the top bar and in the Match panel switches quickly: tick libraries, or click
+*only* next to one. Changing libraries searches the current point again.
+
+*Search settings* set the mass range (by default the acquired range; library
+peaks outside it are ignored), the m/z and intensity weighting exponents
+(default 0.5 and 0.5), the number of hits and the minimum match shown.
+
+### Peaks
+
+In the *Peaks* panel, *Detect & identify* finds the peaks above the given
+S/N (default 10) and searches their apex spectra; progress is shown and the
+job can be cancelled. *Peaks* in the chromatogram toolbar shows the markers.
+
+Filter the table by name or minimum match and sort it by any column. Clicking
+a row (or a peak marker in the chromatogram) selects the peak's apex, so its
+spectrum and hits appear. To correct an identity:
+
+* select a hit in *Hits* and click *Assign to peak*;
+* double click the name to type one;
+* delete the selected peak with the trash button.
+
+Edited peaks have `user` in the *By* column, and the export (CSV, download
+button) keeps them. When the libraries or the processing change, the table is
+marked stale; *Re-identify* searches the peaks again with the active
+libraries and keeps your edits (after re-processing, the peaks are detected
+again).
+
+### Baseline (MS)
+
+The Processing panel sets the baseline of the image, EICs and spectra:
+*Modulation percentile* (default), *Rolling percentile* or *None*, and the
+channel S/N below which spectrum channels are zeroed (0 = off). Two modes
+change spectra only and keep an image baseline of your choice:
+
+* *Local*: subtracts the mean of scans on both sides of the selected point in
+  the same modulation (gap and width in scans);
+* *Reference point*: subtracts the spectrum of a background point; pick it
+  with *Set as background* in the Spectrum panel's menu.
+
+The baseline in force is shown in the spectrum header and written to the
+exports.

@@ -18,14 +18,18 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { DocumentKind } from '@/api/types'
 import { ChromatogramPanel } from '@/chromatogram/ChromatogramPanel'
 import { debounce } from '@/lib/utils'
+import { HitsPanel } from '@/panels/HitsPanel'
 import { IntegrationPanel } from '@/panels/IntegrationPanel'
+import { LibrariesPanel } from '@/panels/LibrariesPanel'
 import { MasksPanel } from '@/panels/MasksPanel'
-import { PlaceholderPanel } from '@/panels/PlaceholderPanel'
+import { MatchPanel } from '@/panels/MatchPanel'
+import { PeaksPanel } from '@/panels/PeaksPanel'
 import { ProcessingPanel } from '@/panels/ProcessingPanel'
+import { SpectrumPanel } from '@/panels/SpectrumPanel'
 import { updateSettings, useSession } from '@/store/session'
 
 /** Bump when the panels or default layouts change: saved layouts are dropped. */
-const LAYOUT_VERSION = 2
+const LAYOUT_VERSION = 3
 
 const theme: DockviewTheme = {
   name: 'pygcxgc',
@@ -39,34 +43,11 @@ export const PANELS = {
   processing: { title: 'Processing', component: () => <ProcessingPanel /> },
   masks: { title: 'Masks', component: () => <MasksPanel /> },
   integration: { title: 'Integration', component: () => <IntegrationPanel /> },
-  spectrum: {
-    title: 'Spectrum',
-    component: () => (
-      <PlaceholderPanel milestone={3}>Mass spectrum of the selected point.</PlaceholderPanel>
-    ),
-  },
-  match: {
-    title: 'Match',
-    component: () => (
-      <PlaceholderPanel milestone={3}>
-        Head-to-tail plot and structure of the selected hit.
-      </PlaceholderPanel>
-    ),
-  },
-  hits: {
-    title: 'Hits',
-    component: () => (
-      <PlaceholderPanel milestone={3}>Library hits of the selected point.</PlaceholderPanel>
-    ),
-  },
-  peaks: {
-    title: 'Peaks',
-    component: () => <PlaceholderPanel milestone={3}>Peak table with identities.</PlaceholderPanel>,
-  },
-  libraries: {
-    title: 'Libraries',
-    component: () => <PlaceholderPanel milestone={3}>Spectral libraries.</PlaceholderPanel>,
-  },
+  spectrum: { title: 'Spectrum', component: () => <SpectrumPanel /> },
+  match: { title: 'Match', component: () => <MatchPanel /> },
+  hits: { title: 'Hits', component: () => <HitsPanel /> },
+  peaks: { title: 'Peaks', component: () => <PeaksPanel /> },
+  libraries: { title: 'Libraries', component: () => <LibrariesPanel /> },
 } satisfies Record<string, { title: string; component: React.FunctionComponent }>
 
 export type PanelId = keyof typeof PANELS
@@ -140,8 +121,8 @@ export function buildDefaultLayout(api: DockviewApi, kind: DocumentKind) {
     add(api, 'integration', { referencePanel: 'hits', direction: 'within' })
     spectrum.api.setActive()
     hits.api.setActive()
-    spectrum.group.api.setSize({ width: Math.round(width / 3), height: Math.round(height * 0.32) })
-    match.group.api.setSize({ height: Math.round(height * 0.34) })
+    spectrum.group.api.setSize({ width: Math.round(width / 3), height: Math.round(height * 0.28) })
+    match.group.api.setSize({ height: Math.round(height * 0.4) })
   }
   api.getPanel('chromatogram')?.api.setActive()
 }

@@ -22,6 +22,7 @@ from pyGCxGC.app.arrays import decode_array, encode_array, max_pool
 from pyGCxGC.app.session import InvalidRequest, JobCancelled, Session
 from pyGCxGC.masks import MaskSet
 from pyGCxGC.ms import GCxGC_MS
+from pyGCxGC.ms.structures import rdkit_available
 
 EXAMPLE = Path(__file__).parents[1] / "example_data"
 FID_CSV = EXAMPLE / "example_chromatograms" / "Example_FID.csv"
@@ -871,3 +872,207 @@ def test_session_estimates_modulation_of_local_run(session):
     doc = session.document(doc_id)
     assert doc.params.modulation_time == 20.0
     assert doc.summary() == "10 Hz · m/z 45–500 · 318 × 200"  # noqa: RUF001
+
+
+# ------------------------------------------------------------------ milestone 3
+def open_ms(session, ms_files) -> str:
+    cdf = ms_files[0]
+    job = session.open_document(cdf, params={"modulation_time": 4})
+    return session.wait(job, 60)["document_id"]
+
+
+def wait_jobs(session, kind: str) -> None:
+    """Wait for all jobs of a kind (also those started by other jobs)."""
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        pending = [j for j in session.jobs.values() if j.kind == kind and not j.done]
+        if not pending:
+            return
+        for j in pending:
+            with contextlib.suppress(Exception):
+                j.wait(60)
+    raise TimeoutError(kind)
+
+
+def test_selection_is_searched_again_when_libraries_change(session, ms_files):
+    doc_id = open_ms(session, ms_files)
+    _, mod, rt2 = ms_files[2][0]  # toluene
+    sel = session.search(doc_id, rt2_index=round(rt2 / 0.05), mod_index=mod)
+    assert sel.hits == []
+    events = []
+    session.subscribe(events.append)
+
+    lib_id = session.wait(session.add_library(ms_files[1]), 60)["library_id"]
+    wait_jobs(session, "search")
+    doc = session.document(doc_id)
+    assert doc.selection is sel  # the same point, searched again
+    assert sel.hits[0].name == "Toluene"
+    changed = [e for e in events if e["type"] == "selection.changed"]
+    assert changed[-1]["selection"]["id"] == sel.id
+    assert changed[-1]["selection"]["hits"][0]["name"] == "Toluene"
+
+    # new search settings
+    session.update_settings({"search": {"n_hits": 2}})
+    wait_jobs(session, "search")
+    assert len(sel.hits) == 2
+    session.set_library_active(lib_id, False)
+    wait_jobs(session, "search")
+    assert sel.hits == []
+    assert sel.libraries == []
+
+    # re-processing re-extracts and re-searches the point, keeping its id
+    session.set_library_active(lib_id, True)
+    wait_jobs(session, "search")
+    session.wait(session.update_document(doc_id, snr=2.0), 60)
+    assert doc.selection.id == sel.id
+    assert doc.selection.hits[0].name == "Toluene"
+    assert doc.selection.spectrum.snr == 2.0
+
+
+def test_search_mass_range_setting(session):
+    assert session.search_parameters((45, 200)).mz_min == 45
+    session.update_settings({"search": {"mz_min": 60, "mz_max": 300}})
+    params = session.search_parameters((45, 200))
+    assert (params.mz_min, params.mz_max) == (60, 200)
+    assert session.search_parameters().mz_min == 60
+
+
+def test_region_spectrum(session, ms_files):
+    doc_id = open_ms(session, ms_files)
+    session.wait(session.add_library(ms_files[1]), 60)
+    mask = session.create_mask(doc_id, "toluene")
+    # toluene: modulation 10 (4 s each), RT2 1.0 s
+    session.add_shape(
+        doc_id,
+        mask.id,
+        {"type": "rect", "rt1": [8 * 4 / 60, 13 * 4 / 60], "rt2": [0.6, 1.4]},
+    )
+    sel = session.select(doc_id, mask_id=mask.id)
+    info = sel.info()
+    assert info["region"] == {"mask_id": mask.id, "name": "toluene", "n_pixels": 80}
+    assert info["scan"] == -1
+    assert info["rt1"] == pytest.approx(10 * 4 / 60, abs=0.01)
+    assert info["rt2"] == pytest.approx(1.0, abs=0.05)
+    spec = sel.spectrum.corrected
+    assert spec.mz[np.argmax(spec.intensity)] == 91
+    assert (sel.spectrum.raw.intensity >= spec.intensity).all()
+    assert session.search(doc_id).hits[0].name == "Toluene"
+    text = session.export(doc_id, "spectrum", "msp")[0].decode()
+    assert text.startswith("Name: run.cdf region toluene\n")
+    assert '"mask=toluene" "n_pixels=80"' in text
+
+    data = session.document(doc_id).data
+    with pytest.raises(ValueError, match="shape"):
+        data.region_spectrum(np.ones((3, 3)))
+    session.create_mask(doc_id, "empty")
+    empty = session.masks(doc_id).masks[-1].id
+    with pytest.raises(InvalidRequest, match="empty"):
+        session.select(doc_id, mask_id=empty)
+
+
+def test_reidentify_peaks_keeps_user_edits(session, ms_files):
+    doc_id = open_ms(session, ms_files)
+    session.wait(session.add_library(ms_files[1]), 60)
+    session.wait(session.detect_peaks(doc_id, snr=10, identify=False), 60)
+    table, info = session.peaks(doc_id)
+    assert (table["name"] == "").all()
+    assert info["libraries"] == []
+    n = len(table)
+    first, second = (int(p) for p in table["peak_id"][:2])
+    session.edit_peak(doc_id, first, name="Mine")
+    session.edit_peak(doc_id, second, delete=True)
+
+    session.wait(session.reidentify_peaks(doc_id), 60)
+    table, info = session.peaks(doc_id)
+    assert len(table) == n - 1  # deleted stays deleted
+    row = table[table["peak_id"] == first].iloc[0]
+    assert (row["name"], row["assigned_by"]) == ("Mine", "user")
+    names = set(table["name"])
+    assert {"Toluene", "Naphthalene", "Decane"} <= names
+    assert info["libraries"] == ["test"]
+    assert not info["stale"]
+
+    # after re-processing, the positions are stale: detected again
+    session.wait(
+        session.update_document(
+            doc_id, baseline={"mode": "modulation_percentile", "percentile": 30}
+        ),
+        60,
+    )
+    assert session.peaks(doc_id)[1]["stale"]
+    job = session.reidentify_peaks(doc_id)
+    assert job.kind == "peaks"
+    session.wait(job, 60)
+    table, info = session.peaks(doc_id)
+    assert not info["stale"]
+    assert "Mine" not in set(table["name"])
+
+
+def test_structures_api(client, session, ms_files):
+    from test_structures import DECANE, pubchem
+
+    session.pubchem, opener = pubchem({"124-18-5": DECANE})
+    doc_id = open_ms(session, ms_files)
+    lib_id = session.wait(session.add_library(ms_files[1]), 60)["library_id"]
+    url = f"/api/libraries/{lib_id}/spectra"
+
+    # from the library entry
+    toluene = client.get(f"{url}/0/structure").json()
+    assert toluene["status"] == "found"
+    assert toluene["structure"]["smiles"] == "Cc1ccccc1"
+    assert toluene["structure"]["source"] == "test"
+    assert toluene["depiction"] == rdkit_available()
+    key = toluene["structure"]["key"]
+    if rdkit_available():
+        light = client.get(f"/api/structures/{key}.svg")
+        assert light.status_code == 200
+        assert light.headers["content-type"].startswith("image/svg+xml")
+        dark = client.get(f"/api/structures/{key}.svg?theme=dark&w=120&h=90")
+        assert "width='120px'" in dark.text
+        assert dark.text != light.text
+    assert client.get("/api/structures/unknown.svg").status_code == 404
+
+    # Decane needs PubChem: ask (default), off, then on
+    assert client.get(f"{url}/2/structure").json()["status"] == "ask"
+    client.put("/api/settings", json={"structures": {"online": "off"}})
+    assert client.get(f"{url}/2/structure").json()["status"] == "offline"
+    assert opener.calls == []
+
+    # an explicit request overrides the setting; unknown compound lookup of an unknown compound
+    heavy = client.get(f"{url}/3/structure?online=true").json()
+    assert heavy["status"] == "pending"
+    session.wait(heavy["job"]["id"], 60)
+    assert client.get(f"{url}/3/structure").json()["status"] == "not_found"
+    assert [c[1] for c in opener.calls] == [b"name=Heavy"]
+
+    # batch identification prefetches the top hits' structures (STRUCT-5)
+    client.put("/api/settings", json={"structures": {"online": "on"}})
+    session.wait(session.detect_peaks(doc_id, snr=10), 60)
+    wait_jobs(session, "structure")
+    assert b"name=124-18-5" in [c[1] for c in opener.calls]
+    decane = client.get(f"{url}/2/structure").json()
+    assert decane["status"] == "found"
+    assert decane["structure"]["source"] == "PubChem"
+    assert decane["structure"]["pubchem_cid"] == 15600
+
+    assert client.get(f"{url}/9/structure").status_code == 404
+
+
+def test_api_region_selection_and_reidentify(client, session, ms_files):
+    doc_id = open_ms(session, ms_files)
+    mask = session.create_mask(doc_id, "m")
+    session.add_shape(
+        doc_id, mask.id, {"type": "rect", "rt1": [0.5, 0.9], "rt2": [0.6, 1.4]}
+    )
+    r = client.put(f"/api/documents/{doc_id}/selection", json={"mask_id": mask.id})
+    assert r.status_code == 200, r.text
+    assert r.json()["region"]["name"] == "m"
+    header, spec = decode_array(client.get(f"/api/documents/{doc_id}/spectrum").content)
+    assert header["scan"] == -1
+    assert spec[np.argmax(spec[:, 2]), 0] == 91
+    r = client.post(f"/api/documents/{doc_id}/peaks/reidentify")
+    assert r.status_code == 400  # no peaks yet
+    wait_job(client, client.post(f"/api/documents/{doc_id}/peaks", json={}))
+    assert wait_job(client, client.post(f"/api/documents/{doc_id}/peaks/reidentify"))[
+        "n_peaks"
+    ]

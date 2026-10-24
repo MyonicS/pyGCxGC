@@ -4,7 +4,6 @@
  */
 
 import {
-  BookMarked,
   ChevronDown,
   Command,
   FolderOpen,
@@ -34,23 +33,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ThemeSetting } from '@/api/types'
 import { basename, cn } from '@/lib/utils'
-import {
-  closeDocument,
-  moveDocument,
-  setActiveDocument,
-  setLibraryActive,
-  useSession,
-} from '@/store/session'
+import { closeDocument, moveDocument, setActiveDocument, useSession } from '@/store/session'
+
+import { LibraryPicker } from '@/ms/LibraryPicker'
 
 import { openCommandPalette } from './CommandPalette'
 import { openPath, showOpenDialog } from './openFile'
@@ -74,7 +62,7 @@ export function TopBar() {
       <OpenMenu />
       <DocumentTabs />
       <div className="ml-auto flex items-center gap-1">
-        <LibrarySelector />
+        <LibraryPicker />
         <ThemeMenu />
         <AppMenu />
       </div>
@@ -207,49 +195,6 @@ function DocumentTabs() {
         )
       })}
     </nav>
-  )
-}
-
-function LibrarySelector() {
-  const libraries = useSession((s) => s.libraries)
-  const list = Object.values(libraries)
-  const active = list.find((l) => l.active)
-  if (list.length === 0) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex h-7 items-center gap-1.5 px-2 text-xs text-muted-foreground">
-            <BookMarked className="size-3.5" />
-            No library
-          </div>
-        </TooltipTrigger>
-        <TooltipContent>Libraries are added in the Libraries panel (milestone 3)</TooltipContent>
-      </Tooltip>
-    )
-  }
-  return (
-    <Select value={active?.id ?? ''} onValueChange={(id) => void setLibraryActive(id, true)}>
-      <SelectTrigger
-        size="sm"
-        className="h-7 max-w-56 border-transparent bg-transparent text-xs shadow-none hover:bg-accent dark:bg-transparent"
-        aria-label="Active library"
-      >
-        <BookMarked className="size-3.5" />
-        <SelectValue placeholder="Select library" />
-      </SelectTrigger>
-      <SelectContent align="end">
-        {list.map((lib) => (
-          <SelectItem key={lib.id} value={lib.id} disabled={lib.status !== 'ready'}>
-            <span className="truncate">{lib.name}</span>
-            <span className="text-xs text-muted-foreground">
-              {lib.status === 'ready'
-                ? `${lib.n_spectra?.toLocaleString() ?? ''} spectra`
-                : lib.status}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   )
 }
 

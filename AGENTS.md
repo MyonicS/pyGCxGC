@@ -12,9 +12,9 @@ uv pip install -e .               # needed for the console scripts
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src/pyGCxGC/ms src/pyGCxGC/app src/pyGCxGC/masks.py \
     src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py tests/test_masks.py \
-    tests/test_app.py tests/synthetic.py
+    tests/test_app.py tests/test_structures.py tests/synthetic.py
 .venv/bin/ruff format <files you touched>
-.venv/bin/python -m pyGCxGC.app [file] [-l LIBRARY] [--open]   # app server: prints READY <port> and the URL with the token
+.venv/bin/pygcxgc [file] [-l LIBRARY] [--open]   # = python -m pyGCxGC.app; prints READY <port> and the URL with the token
 ```
 
 Frontend (`frontend/`, pnpm, Node >= 22):
@@ -47,17 +47,20 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/ms/nist.py` | Reader for NIST MS Search `MAINLIB/nist.db` (format documented in the module docstring) |
 | `src/pyGCxGC/ms/search.py` | Composite match factor / reverse match (Stein & Scott), sparse prescreen |
 | `src/pyGCxGC/ms/peaks.py` | 2D peak detection (local maxima + nearest-apex blob volumes) and batch identification |
+| `src/pyGCxGC/ms/structures.py` | Structure resolver: library identifiers, then opt-in PubChem (`PubChem`, rate limited), SQLite `StructureCache`, RDKit `depict_svg` |
 | `src/pyGCxGC/gui/ms_viewer.py` | Tk GCxGC-MS viewer (`pygcxgc-msviewer`, `pyGCxGC.launch_ms_viewer`); drawing only, all logic goes through a `Session` |
 | `src/pyGCxGC/app/session.py` | `Session`: documents, jobs, events, libraries, selection/search, peaks, masks with undo, export. Core dependencies only |
 | `src/pyGCxGC/app/server.py`, `schemas.py`, `arrays.py` | FastAPI routes and WebSocket, pydantic API models, binary array format (`app` extra) |
 | `tests/test_ms.py` | Synthetic-data tests for everything in `ms/` (no local data needed) |
 | `tests/test_masks.py`, `tests/test_app.py` | `MaskSet`; `Session` and the API (FastAPI `TestClient`) |
+| `tests/test_structures.py` | Structure resolver and cache with a stubbed PubChem (`pubchem()` is reused by `test_app.py` and `e2e/backend.py`) |
 | `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
 | `frontend/src/api/` | Transport (HTTP + WebSocket, spec NB-4), typed client, binary array decoder; `schema.d.ts` is generated |
 | `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events; per-document mask edit queue), `view` (display, zoom, tool, active mask, selected shape), `images` (overview + detail layers), `masks.ts` (mask commands) |
 | `frontend/src/chromatogram/` | WebGL2 renderer (`renderer.ts`, all display maths in the shader), view, axes, colour bar, overlays, Display popover |
-| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts, file browser, open and path dialogs, settings, command palette; Processing, Masks and Integration panels, placeholders |
+| `frontend/src/shell/`, `panels/` | Top bar, status bar, dockview workspace and layouts, file browser, open and path dialogs, settings, command palette; Processing, Masks, Integration, Spectrum, Hits, Match, Peaks and Libraries panels |
+| `frontend/src/ms/`, `store/ms.ts` | Stick plot (spectrum, head-to-tail), structure card, library picker; MS commands (select and search, EIC, peaks, libraries) and view state (selected hit and peak), spectrum/structure fetching |
 | `docs/example_docs/gui/app.md` | User documentation of the app |
 | `frontend/e2e/` | Playwright tests; `backend.py` serves a session with the example FID and a synthetic MS run |
 | `scripts/export_*.py` | Generated frontend inputs: colour maps, OpenAPI snapshot, matplotlib interpolation reference |
@@ -172,6 +175,27 @@ files you change, and do not reformat untouched legacy code.
   native `<input type="color">` overflows small swatches unless sized and
   clipped. AG Grid registers only the modules in use (`AllCommunityModule`
   doubled the bundle) and never loads Google fonts.
+* **MS selection.** A click is two requests: `PUT .../selection` (the
+  spectrum shows at once) then `POST /api/search` (document only, searches the
+  current selection and emits `selection.changed` only if it is still
+  current). The frontend relies on the events, not the responses. The backend
+  re-searches selections that were searched before (`hits is not None`) when
+  libraries or search settings change (`Session._research`, a `search` job).
+  `Selection.id` identifies the point across re-searches; the selected hit
+  resets when the hit list changes (`hitsKey`), the selected peak when the
+  selection id changes.
+* **Structures.** PubChem's property is `SMILES` (requesting `IsomericSMILES`
+  still works but returns `SMILES`); names and CAS numbers are POSTed to
+  `/compound/name/property/...` so special characters need no escaping, and
+  404 means "not found". Tests stub it with `session.pubchem = pubchem({...})`
+  from `tests/test_structures.py`. The e2e backend clears its structure cache
+  at start, but light and dark projects share one backend, so only the first
+  project sees the "Fetch from PubChem?" prompt.
+* AG Grid: sorting needs no module in v36 (there is no exported
+  `SortModule`); `rowClassRules` needs `RowStyleModule`, editable cells
+  `TextEditorModule`, `tooltipField`/`headerTooltip` the `TooltipModule` (not
+  registered). The current row (selected hit or peak) is styled with
+  `.row-current` in `index.css`.
 * Playwright `--update-snapshots` only rewrites failing screenshots; use
   `--update-snapshots=all` after intended UI changes. The e2e tests call
   Python (`helpers.python`) to check results against `integrate_masks`.

@@ -1,5 +1,6 @@
 """
-Start the pyGCxGC app server: ``python -m pyGCxGC.app [files] [options]``.
+Start the pyGCxGC app server: ``pygcxgc [files] [options]`` or
+``python -m pyGCxGC.app [files] [options]``.
 
 Prints ``READY <port>`` on stdout once the server is listening, followed by
 the URL with the token. The token can be passed with ``--token`` or the
@@ -9,9 +10,33 @@ the URL with the token. The token can be passed with ``--token`` or the
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import sys
 from pathlib import Path
+
+
+def replaces_legacy_tool(tool: str, app_args: list[str]) -> int | None:
+    """
+    Start the app instead of a deprecated Tk tool (spec NB-5).
+
+    Prints the deprecation notice and runs the app with ``app_args`` (it opens
+    in the browser). Returns ``None`` without the ``app`` extra, so the
+    caller can fall back to the Tk tool.
+    """
+    if any(importlib.util.find_spec(m) is None for m in ("fastapi", "uvicorn")):
+        print(  # noqa: T201
+            f'{tool} is deprecated: install the app (pip install "pyGCxGC[app]") '
+            "and run pygcxgc. Starting the old tool.",
+            file=sys.stderr,
+        )
+        return None
+    print(  # noqa: T201
+        f"{tool} is deprecated and now starts the pyGCxGC app (pygcxgc). "
+        f"Run {tool} --legacy for the old tool until it is removed.",
+        file=sys.stderr,
+    )
+    return main([*app_args, "--open"])
 
 
 def main(argv=None) -> int:

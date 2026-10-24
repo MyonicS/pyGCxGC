@@ -201,11 +201,14 @@ class SearchRequest(Model):
 
 
 class SelectRequest(Model):
+    """A point (pixel or scan), or with ``mask_id`` the summed spectrum of a mask."""
+
     rt2_index: int | None = None
     mod_index: int | None = None
     scan: int | None = None
     snap: bool = True
     n_average: int = Field(3, ge=1)
+    mask_id: str | None = Field(None, description="Region spectrum of this mask")
 
 
 class HitInfo(Info):
@@ -223,7 +226,15 @@ class HitInfo(Info):
     library_id: str | None
 
 
+class RegionInfo(Info):
+    mask_id: str
+    name: str
+    n_pixels: int
+
+
 class SelectionInfo(Info):
+    id: int = Field(0, description="Increases with every new selection")
+    region: RegionInfo | None = Field(None, description="Set for a mask's spectrum")
     document_id: str
     rt2_index: int
     mod_index: int
@@ -262,6 +273,32 @@ class PeakTable(Info):
     libraries: list[str]
     baseline: str | None
     snr: float | None
+
+
+# ------------------------------------------------------------------ structures
+class StructureData(Info):
+    smiles: str
+    inchi: str
+    inchikey: str
+    pubchem_cid: int
+    source: str
+    key: str = Field(description="For /api/structures/{key}.svg")
+
+
+class StructureInfo(Info):
+    """Structure of a library entry (spec §8)."""
+
+    library_id: str
+    index: int
+    name: str
+    formula: str
+    mw: int
+    cas: str
+    nist_no: int
+    status: Literal["found", "not_found", "ask", "offline", "pending"]
+    structure: StructureData | None
+    job: JobInfo | None = Field(None, description="The lookup, when pending")
+    depiction: bool = Field(description="RDKit can draw the structure")
 
 
 # ------------------------------------------------------------------ masks

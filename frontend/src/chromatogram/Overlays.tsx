@@ -86,7 +86,8 @@ function OverlaysImpl({
   const labels = visiblePeaks.length <= MAX_LABELS
 
   let selected: { x: number; y: number } | null = null
-  if (selection && image) {
+  // a region spectrum (MS-11) has no point
+  if (selection && image && selection.rt2_index >= 0 && selection.mod_index >= 0) {
     const c = pixelCentre(image.full, { row: selection.rt2_index, col: selection.mod_index })
     selected = { x: plot.left + t.x(c.rt1), y: plot.top + t.y(c.rt2) }
   }

@@ -26,6 +26,9 @@
   --color-plot-halo: var(--plot-halo);
   --color-plot-marker: var(--plot-marker);
   --color-plot-zoom: var(--plot-zoom);
+  --color-plot-unknown: var(--plot-unknown);
+  --color-plot-reference: var(--plot-reference);
+  --color-plot-grid: var(--plot-grid);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-ring: var(--ring);
@@ -90,6 +93,10 @@
   --plot-halo: oklch(0 0 0 / 0.55);
   --plot-marker: oklch(1 0 0);
   --plot-zoom: oklch(0.5 0.16 255);
+  /* mass spectra: the unknown (up) and the library hit (down) */
+  --plot-unknown: oklch(0.5 0.15 255);
+  --plot-reference: oklch(0.55 0.17 30);
+  --plot-grid: oklch(0.2 0.01 255 / 0.08);
 }
 
 .dark {
@@ -126,6 +133,9 @@
   --plot-halo: oklch(0 0 0 / 0.6);
   --plot-marker: oklch(1 0 0);
   --plot-zoom: oklch(0.75 0.13 250);
+  --plot-unknown: oklch(0.74 0.12 245);
+  --plot-reference: oklch(0.74 0.14 35);
+  --plot-grid: oklch(1 0 0 / 0.08);
 }
 
 @layer base {
@@ -217,4 +227,10 @@
 
 .dockview-theme-pygcxgc .dv-groupview:not(.dv-active-group) .dv-tab.dv-active-tab {
   box-shadow: inset 0 2px 0 0 var(--border);
+}
+
+/* AG Grid: the row shown in the dependent panels (selected hit or peak) */
+.ag-row.row-current {
+  background-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--primary);
 }

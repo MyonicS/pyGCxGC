@@ -315,6 +315,26 @@ export interface paths {
         patch: operations["edit_peaks_api_documents__doc_id__peaks_patch"];
         trace?: never;
     };
+    "/api/documents/{doc_id}/peaks/reidentify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reidentify
+         * @description Identify the peaks again with the active libraries (keeps user edits).
+         */
+        post: operations["reidentify_api_documents__doc_id__peaks_reidentify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/documents/{doc_id}/selection": {
         parameters: {
             query?: never;
@@ -508,6 +528,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/libraries/{library_id}/spectra/{index}/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Library Structure
+         * @description Structure of a library entry. ``online`` overrides the setting
+         *     ``structures.online`` for this request (``pending``: a lookup job).
+         */
+        get: operations["library_structure_api_libraries__library_id__spectra__index__structure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -560,6 +601,26 @@ export interface paths {
          * @description Merge ``changes`` into the settings (nested objects are merged).
          */
         put: operations["put_settings_api_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/structures/{key}.svg": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Structure Svg
+         * @description Depiction of a resolved structure (404 without RDKit).
+         */
+        get: operations["structure_svg_api_structures__key__svg_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1226,6 +1287,17 @@ export interface components {
              */
             scan: number;
         };
+        /** RegionInfo */
+        RegionInfo: {
+            /** Mask Id */
+            mask_id: string;
+            /** N Pixels */
+            n_pixels: number;
+            /** Name */
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** RollingPercentileBaseline */
         RollingPercentileBaseline: {
             /**
@@ -1270,8 +1342,16 @@ export interface components {
             snap: boolean;
             spectrum?: components["schemas"]["SpectrumIn"] | null;
         };
-        /** SelectRequest */
+        /**
+         * SelectRequest
+         * @description A point (pixel or scan), or with ``mask_id`` the summed spectrum of a mask.
+         */
         SelectRequest: {
+            /**
+             * Mask Id
+             * @description Region spectrum of this mask
+             */
+            mask_id?: string | null;
             /** Mod Index */
             mod_index?: number | null;
             /**
@@ -1297,12 +1377,20 @@ export interface components {
             document_id: string;
             /** Hits */
             hits: components["schemas"]["HitInfo"][] | null;
+            /**
+             * Id
+             * @description Increases with every new selection
+             * @default 0
+             */
+            id: number;
             /** Libraries */
             libraries: string[];
             /** Mod Index */
             mod_index: number;
             /** N Average */
             n_average: number;
+            /** @description Set for a mask's spectrum */
+            region?: components["schemas"]["RegionInfo"] | null;
             /** Rt1 */
             rt1: number | null;
             /** Rt2 */
@@ -1354,6 +1442,61 @@ export interface components {
             intensity: number[];
             /** Mz */
             mz: number[];
+        };
+        /** StructureData */
+        StructureData: {
+            /** Inchi */
+            inchi: string;
+            /** Inchikey */
+            inchikey: string;
+            /**
+             * Key
+             * @description For /api/structures/{key}.svg
+             */
+            key: string;
+            /** Pubchem Cid */
+            pubchem_cid: number;
+            /** Smiles */
+            smiles: string;
+            /** Source */
+            source: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * StructureInfo
+         * @description Structure of a library entry (spec §8).
+         */
+        StructureInfo: {
+            /** Cas */
+            cas: string;
+            /**
+             * Depiction
+             * @description RDKit can draw the structure
+             */
+            depiction: boolean;
+            /** Formula */
+            formula: string;
+            /** Index */
+            index: number;
+            /** @description The lookup, when pending */
+            job?: components["schemas"]["JobInfo"] | null;
+            /** Library Id */
+            library_id: string;
+            /** Mw */
+            mw: number;
+            /** Name */
+            name: string;
+            /** Nist No */
+            nist_no: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "found" | "not_found" | "ask" | "offline" | "pending";
+            structure: components["schemas"]["StructureData"] | null;
+        } & {
+            [key: string]: unknown;
         };
         /** ValidationError */
         ValidationError: {
@@ -2598,6 +2741,55 @@ export interface operations {
             };
         };
     };
+    reidentify_api_documents__doc_id__peaks_reidentify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStarted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_selection_api_documents__doc_id__selection_get: {
         parameters: {
             query?: never;
@@ -3282,6 +3474,58 @@ export interface operations {
             };
         };
     };
+    library_structure_api_libraries__library_id__spectra__index__structure_get: {
+        parameters: {
+            query?: {
+                online?: boolean | null;
+            };
+            header?: never;
+            path: {
+                library_id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructureInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_api_search_post: {
         parameters: {
             query?: never;
@@ -3435,6 +3679,59 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    structure_svg_api_structures__key__svg_get: {
+        parameters: {
+            query?: {
+                theme?: "light" | "dark";
+                w?: number;
+                h?: number;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/svg+xml": unknown;
                 };
             };
             /** @description Bad Request */

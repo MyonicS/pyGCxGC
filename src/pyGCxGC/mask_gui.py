@@ -56,3 +56,22 @@ def launch_mask_creator():
     app = MaskCreatorGUI(root)
     root.mainloop()
     return None
+
+
+def main(argv=None):
+    """Command line entry point (``pygcxgc-maskcreator``): starts the app (spec NB-5)."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="pyGCxGC mask creator (deprecated)")
+    parser.add_argument(
+        "--legacy", action="store_true", help="the deprecated Tk mask creator"
+    )
+    args = parser.parse_args(argv)
+    if not args.legacy:
+        from pyGCxGC.app.__main__ import replaces_legacy_tool
+
+        code = replaces_legacy_tool("pygcxgc-maskcreator", [])
+        if code is not None:
+            return code
+    launch_mask_creator()
+    return 0

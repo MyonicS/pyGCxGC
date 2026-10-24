@@ -19,12 +19,12 @@ import {
   zoomDomain,
   type Domain,
 } from '@/lib/geometry'
-import { notifyError } from '@/lib/notify'
 import { formatValue } from '@/lib/ticks'
 import { debounce } from '@/lib/utils'
 import { loadDetail, loadImage, useImages } from '@/store/images'
 import { drawShape, replaceShape, useActiveMaskId } from '@/store/masks'
-import { api, useSession } from '@/store/session'
+import { selectPeak, selectPoint } from '@/store/ms'
+import { useSession } from '@/store/session'
 import {
   defaultDisplay,
   effectiveContrast,
@@ -553,23 +553,15 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
       }
     }
     if (selected) selectShape(null)
-    void selectPoint(p)
-  }
-
-  const selectPoint = async ([rt1, rt2]: Point) => {
     if (doc.kind !== 'ms' || !image) return
-    const pixel = pixelAt(image.full, rt1, rt2)
-    if (!pixel) return
-    try {
-      await api().select(docId, {
-        rt2_index: pixel.row,
-        mod_index: pixel.col,
-        snap: true,
-        n_average: 3,
-      })
-    } catch (err) {
-      notifyError('Select point', err)
+    // a click on a peak marker selects the peak (its apex, for "Assign hit")
+    const row = hoverPeak && peaks?.rows.find((r) => Number(r.peak_id) === hoverPeak.id)
+    if (row) {
+      void selectPeak(docId, { peak_id: Number(row.peak_id), scan: Number(row.scan) })
+      return
     }
+    const pixel = pixelAt(image.full, p[0], p[1])
+    if (pixel) void selectPoint(docId, pixel.row, pixel.col)
   }
 
   // keys while drawing: Enter closes a polygon, Backspace removes its last

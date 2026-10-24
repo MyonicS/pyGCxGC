@@ -8,6 +8,7 @@
 import {
   ArrowDown,
   ArrowUp,
+  AudioLines,
   Copy,
   Download,
   Eye,
@@ -52,6 +53,7 @@ import {
   updateMask,
   useActiveMaskId,
 } from '@/store/masks'
+import { selectRegion } from '@/store/ms'
 import { useActiveDocument, useSession } from '@/store/session'
 import { selectShape, setActiveMask, setTool, useView } from '@/store/view'
 import { mod } from '@/shell/TopBar'
@@ -105,6 +107,16 @@ function MasksView({ doc }: { doc: DocumentInfo }) {
         >
           <ArrowDown />
         </IconButton>
+        {doc.kind === 'ms' && (
+          <IconButton
+            label="Search the mask's summed spectrum"
+            disabled={!active}
+            onClick={() => active && void selectRegion(doc.id, active.id)}
+            testId="mask-spectrum"
+          >
+            <AudioLines />
+          </IconButton>
+        )}
         <span className="mx-1 h-5 w-px bg-border" />
         <IconButton
           label="Undo"

@@ -14,7 +14,7 @@ import {
   SquareMinus,
   Target,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { DocumentInfo } from '@/api/types'
 
@@ -29,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
 import { Toggle } from '@/components/ui/toggle'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -36,6 +37,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Kbd } from '@/components/Kbd'
 import { useImages } from '@/store/images'
 import { newMask, useActiveMaskId, useMasks } from '@/store/masks'
+import { setSignal } from '@/store/ms'
 import { useActiveDocument, useSession } from '@/store/session'
 import {
   defaultDisplay,
@@ -136,6 +138,7 @@ export function ChromatogramPanel() {
             onChange={(showPeaks) => updateDisplay(doc.id, { showPeaks })}
           />
         )}
+        {doc.kind === 'ms' && <SignalInput key={`${doc.id}:${doc.mz?.join(',')}`} doc={doc} />}
         <div className="ml-auto truncate pl-2 text-xs text-muted-foreground">
           {signalLabel(doc)}
           {image && (image.overview.pool[0] > 1 || image.overview.pool[1] > 1)
@@ -238,6 +241,49 @@ function DrawingTarget({ docId }: { docId: string }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </>
+  )
+}
+
+/** TIC or EIC from an m/z list (spec MS-3); an empty field returns to the TIC. */
+function SignalInput({ doc }: { doc: DocumentInfo }) {
+  const current = doc.mz?.join(' ') ?? ''
+  const [text, setText] = useState(current)
+  const [busy, setBusy] = useState(false)
+  const apply = async () => {
+    if (text.trim() === current) return
+    setBusy(true)
+    const ok = await setSignal(doc, text)
+    setBusy(false)
+    if (!ok) setText(current)
+  }
+  return (
+    <>
+      <Separator orientation="vertical" className="mx-1 h-5!" />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            EIC
+            <Input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void apply()
+                if (e.key === 'Escape') setText(current)
+              }}
+              onBlur={() => setText(current)}
+              placeholder="TIC"
+              aria-label="EIC m/z"
+              disabled={busy}
+              className="h-7 w-28 px-1.5 font-mono text-xs tabular"
+              data-testid="eic-input"
+            />
+          </label>
+        </TooltipTrigger>
+        <TooltipContent>
+          m/z of an extracted ion chromatogram, e.g. 91 or 57 71 85. Enter applies, empty = TIC.
+        </TooltipContent>
+      </Tooltip>
     </>
   )
 }

@@ -12,6 +12,7 @@ export const MASK_DIR = resolve('../example_data/example_masks')
 export const DATA = resolve('e2e/.data')
 export const MS = resolve(DATA, 'run.cdf')
 export const MS_OTHER = resolve(DATA, 'other.cdf')
+export const LIBRARY = resolve(DATA, 'library.msp')
 export const headers = { Authorization: `Bearer ${TOKEN}` }
 
 const VENV_PYTHON = resolve('../.venv/bin/python')
@@ -69,10 +70,16 @@ export async function imageShown(page: Page) {
 export async function resetSession(request: APIRequestContext) {
   const docs = await api<{ id: string }[]>(request, 'GET', '/api/documents')
   for (const d of docs) await api(request, 'DELETE', `/api/documents/${d.id}`)
+  const libs = await api<{ id: string }[]>(request, 'GET', '/api/libraries')
+  for (const l of libs) await api(request, 'DELETE', `/api/libraries/${l.id}`)
   await api(request, 'PUT', '/api/settings', {
     theme: 'system',
     recent_files: [],
+    libraries: [],
     fid: { modulation_time: null },
+    ms: { snap: true, n_average: 3, peak_snr: 10 },
+    search: { mz_power: 0.5, int_power: 0.5, n_hits: 20, min_match: 0, mz_min: null, mz_max: null },
+    structures: { online: 'ask' },
     ui: { layouts: { fid: null, ms: null }, last_folder: null },
   })
 }
@@ -105,4 +112,19 @@ export async function screenPoint(
     box.x + ((rt1 - x0) / (x1 - x0)) * box.width,
     box.y + (1 - (rt2 - y0) / (y1 - y0)) * box.height,
   ]
+}
+
+/** Load a library through the API and wait until it is ready. */
+export async function addLibrary(request: APIRequestContext, path = LIBRARY) {
+  const { job } = await api<{ job: { id: string } }>(request, 'POST', '/api/libraries', { path })
+  for (;;) {
+    const j = await api<{ status: string; result: { library_id: string } }>(
+      request,
+      'GET',
+      `/api/jobs/${job.id}`,
+    )
+    if (j.status === 'done') return j.result.library_id
+    expect(['queued', 'running']).toContain(j.status)
+    await new Promise((r) => setTimeout(r, 100))
+  }
 }

@@ -324,6 +324,61 @@ class GCxGC_MS:
         j, i = self.pixel_at(rt1_min, rt2_s)
         return self.spectrum(self.scan_at(j, i), **kwargs)
 
+    def region_spectrum(
+        self,
+        mask: np.ndarray,
+        subtract_background: bool = True,
+        snr: float = 3.0,
+        label: str = "",
+    ) -> Spectrum:
+        """
+        Summed spectrum of a 2D region (e.g. a mask).
+
+        Parameters
+        ----------
+        mask : np.ndarray
+            ``(n_rt2, n_modulations)`` array; pixels with a value > 0 are
+            summed (a raster of :class:`pyGCxGC.MaskSet` with
+            ``origin="lower"``).
+        subtract_background : bool, default True
+            Subtract the image baseline (:attr:`BaselineModel.image_model`)
+            and zero channels below ``snr`` times the noise of the sum.
+        snr : float, default 3
+            Channel zeroing threshold (``0`` keeps all channels).
+        label : str, optional
+            Stored on the spectrum (e.g. the mask name).
+
+        Returns
+        -------
+        Spectrum
+            ``rt1``/``rt2`` are the intensity-weighted centre of the region,
+            ``scan`` is ``-1``.
+        """
+        mask = np.asarray(mask)
+        if mask.shape != self._scan_grid.shape:
+            raise ValueError(
+                f"The region has shape {mask.shape}, the data {self._scan_grid.shape}"
+            )
+        inside = (mask > 0) & self._valid
+        scans = self._scan_grid[inside]
+        summed = self.raw.intensities[scans].astype(np.float64).sum(axis=0)
+        if subtract_background and len(scans):
+            model = self.baseline.image_model
+            summed -= model.spectrum_baseline(self, scans)
+            noise = model.noise_of_scans(scans)
+            if noise is not None and snr > 0:
+                # independent noise per scan adds in quadrature
+                threshold = snr * np.sqrt((noise.astype(np.float64) ** 2).sum(axis=0))
+                summed[summed < threshold] = 0.0
+        summed = np.clip(summed, 0, None)
+        rt1 = rt2 = float("nan")
+        weights = np.clip(self.tic_2d[inside], 0, None)
+        if weights.sum() > 0:
+            rows, cols = np.nonzero(inside)
+            rt1 = float(np.average(self.rt1[cols], weights=weights))
+            rt2 = float(np.average(self.rt2[rows], weights=weights))
+        return Spectrum(self.mz.copy(), summed, rt1, rt2, -1, label)
+
     def find_apex(self, scan: int, rt2_window: int = 3, mod_window: int = 1) -> int:
         """
         Scan with the highest TIC in a window around ``scan``.

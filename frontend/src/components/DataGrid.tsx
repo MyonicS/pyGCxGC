@@ -9,6 +9,8 @@ import {
   ClientSideRowModelModule,
   ModuleRegistry,
   PinnedRowModule,
+  RowStyleModule,
+  TextEditorModule,
   themeQuartz,
   ValidationModule,
   type GridOptions,
@@ -21,6 +23,8 @@ ModuleRegistry.registerModules([
   ClientSideRowModelModule,
   PinnedRowModule,
   CellStyleModule,
+  RowStyleModule,
+  TextEditorModule,
   ...(import.meta.env.DEV ? [ValidationModule] : []),
 ])
 

@@ -21,12 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - API: `GET /api/fs/probe` and a `region` parameter for images.
 - App milestone 2: rectangle, lasso and polygon tools (add or subtract), shape editing, undo/redo, the Masks panel (colour, visibility, rename, reorder, duplicate, category, import of TIFF folders, mask sets and other documents, exports) and the Integration panel (volumes, % of total, unassigned, overlap warnings, CSV, batch integration of several files and "Copy as Python").
 - API: `POST /api/documents/{id}/batch`; mask responses include the integration.
+- App milestone 3 (GCxGC-MS): EIC from an m/z list, click to search with snap to apex and scan averaging, the Spectrum panel (corrected/raw, relative/absolute, labelled peaks, copy as text, save as MSP), the Hits panel, the Match panel (head-to-tail plot and structure), the Peaks panel (detect & identify with progress, filter, sort, assign hit, rename, delete, CSV export, stale tables and re-identify keeping edits), the Libraries panel (add NIST/MSP/npz, download MoNA, several active libraries, search settings including the mass range), spectra-only baselines (local, reference point via "Set as background") and the summed spectrum of a mask.
+- Molecule structures (`pyGCxGC.ms.structures`): from library identifiers or an opt-in, cached PubChem lookup, drawn with RDKit in light or dark colours.
+- `GCxGC_MS.region_spectrum` (summed, background corrected spectrum of a mask).
+- `pygcxgc` command (the app).
+- API: structure info and SVG depictions, peak re-identification, region selection.
 
 ### Changed
 
 - The GCxGC-MS viewer runs on the app `Session`.
 - The per-ion baseline is estimated in parallel; opening a run is about 2 s faster.
 - The app integrates only masks that changed, so an edit takes about the same time with any number of masks.
+- `pygcxgc-msviewer` and `pygcxgc-maskcreator` are deprecated and start the app; `--legacy` runs the Tk tools.
+- The app searches the selected point again when libraries or search settings change, and after re-processing.
 
 ### Fixed
 

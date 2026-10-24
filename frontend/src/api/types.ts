@@ -21,13 +21,69 @@ export type FileProbe = Schemas['FileProbe']
 export type ProcessingParams = Schemas['ProcessingParams']
 export type OpenDocumentRequest = Schemas['OpenDocumentRequest']
 export type JobStarted = Schemas['JobStarted']
-export type SelectRequest = Schemas['SelectRequest']
+/** Fields with defaults are optional in requests. */
+export type SelectRequest = Partial<Schemas['SelectRequest']>
 export type ErrorResponse = Schemas['ErrorResponse']
 export type OperationInfo = Schemas['OperationInfo']
 export type IntegrationRow = Schemas['IntegrationRow']
 export type MaskUpdate = Schemas['MaskUpdate']
 export type MaskImport = Schemas['MaskImport']
 export type ExportRequest = Schemas['ExportRequest']
+export type StructureInfo = Schemas['StructureInfo']
+export type StructureData = Schemas['StructureData']
+export type PeakEdit = Omit<Schemas['PeakEdit'], 'delete'> & { delete?: boolean }
+export type LibraryAdd = Schemas['LibraryAdd']
+
+/** A row of the peak table (`PeakTable.rows`). */
+export interface PeakRow {
+  peak_id: number
+  rt1_min: number
+  rt2_s: number
+  scan: number
+  rt2_index: number
+  mod_index: number
+  height: number
+  volume: number
+  n_pixels: number
+  name: string
+  match: number
+  reverse_match: number
+  formula: string
+  mw: number
+  cas: string
+  nist_no: number
+  library: string
+  baseline: string
+  assigned_by: '' | 'library' | 'user'
+  category: string
+}
+
+/** Header of `GET /api/documents/{id}/spectrum` (columns `mz`, `raw`, `corrected`). */
+export interface SpectrumHeader {
+  document_id: string
+  rt2_index: number
+  mod_index: number
+  scan: number
+  rt1: number | null
+  rt2: number | null
+  n_average: number
+  snap: boolean
+  baseline: string
+  snr: number
+  columns: ['mz', 'raw', 'corrected']
+}
+
+/** Header of `GET /api/libraries/{id}/spectra/{index}` (columns `mz`, `intensity`). */
+export interface LibrarySpectrumHeader {
+  library_id: string
+  index: number
+  name: string
+  formula: string
+  mw: number
+  cas: string
+  nist_no: number
+  inchikey: string
+}
 
 /** Shapes of mask operations (`OperationInfo.shape`). */
 export type Shape =
@@ -97,6 +153,17 @@ interface EventBase {
   revision: number
 }
 
+/** Library search settings (spec LIB-5). */
+export interface SearchSettings {
+  mz_power?: number
+  int_power?: number
+  n_hits?: number
+  min_match?: number
+  /** `null`: the acquired range. */
+  mz_min?: number | null
+  mz_max?: number | null
+}
+
 /** Settings keys the frontend uses (the backend stores any JSON). */
 export type ThemeSetting = 'light' | 'dark' | 'system'
 
@@ -110,6 +177,9 @@ export interface Settings {
     log_range?: number
   }
   fid?: { modulation_time?: number | null }
+  search?: SearchSettings
+  structures?: { online?: 'ask' | 'on' | 'off' }
+  ms?: { snap?: boolean; n_average?: number; peak_snr?: number }
   recent_files?: string[]
   ui?: {
     layouts?: Partial<Record<DocumentKind, string>>

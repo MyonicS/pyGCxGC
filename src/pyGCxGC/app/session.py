@@ -41,6 +41,7 @@ import csv
 import io
 import itertools
 import json
+import sqlite3
 import threading
 import time
 import traceback
@@ -71,12 +72,21 @@ from pyGCxGC.ms.data import GCxGC_MS, Spectrum, estimate_modulation_time
 from pyGCxGC.ms.io import OLE_MAGIC, read_ms_file
 from pyGCxGC.ms.library import (
     SpectralLibrary,
+    default_cache_dir,
     download_mona_gcms,
     library_cache_file,
     load_library,
 )
 from pyGCxGC.ms.peaks import detect_peaks, identify_peaks
 from pyGCxGC.ms.search import Hit, SearchParameters, search_spectrum
+from pyGCxGC.ms.structures import (
+    PubChem,
+    StructureCache,
+    depict_svg,
+    is_resolved,
+    rdkit_available,
+    resolve,
+)
 from pyGCxGC.parsing import parse_2D_chromatogram, parse_csv
 from pyGCxGC.processing import integrate_2D
 
@@ -99,7 +109,14 @@ IDENTITY_COLUMNS = (
 DEFAULT_SETTINGS: dict[str, Any] = {
     "theme": "system",
     "display": {"colormap": "viridis", "scaling": "sqrt", "interpolation": "nearest"},
-    "search": {"mz_power": 0.5, "int_power": 0.5, "n_hits": 20, "min_match": 0},
+    "search": {
+        "mz_power": 0.5,
+        "int_power": 0.5,
+        "n_hits": 20,
+        "min_match": 0,
+        "mz_min": None,  # None = the acquired range
+        "mz_max": None,
+    },
     "structures": {"online": "ask"},
     "fid": {"modulation_time": None},
     "libraries": [],
@@ -393,17 +410,30 @@ class SpectrumResult:
         }
 
 
+_selection_ids = itertools.count(1)
+
+
 @dataclass
 class Selection:
-    """The selected point of a document, its spectrum and library hits."""
+    """
+    The selected point (or region) of a document, its spectrum and hits.
+
+    ``id`` increases with every new selection, so clients can tell a newer
+    selection from a re-searched one. ``region`` is set for the summed
+    spectrum of a mask (``{"mask_id", "name", "n_pixels"}``).
+    """
 
     spectrum: SpectrumResult
     hits: list[Hit] | None = None
     libraries: list[str] = field(default_factory=list)
+    region: dict | None = None
+    id: int = field(default_factory=lambda: next(_selection_ids))
 
     def info(self) -> dict:
         return {
             **self.spectrum.info(),
+            "id": self.id,
+            "region": self.region,
             "hits": None if self.hits is None else [hit_dict(h) for h in self.hits],
             "libraries": list(self.libraries),
         }
@@ -573,6 +603,7 @@ class MSDocument(Document):
         self.peaks: pd.DataFrame | None = None
         self.peak_hits: dict[int, list[Hit]] = {}
         self.peaks_info: dict = {}
+        self._peaks_data: GCxGC_MS | None = None  # the data the peaks belong to
         self._images: OrderedDict = OrderedDict()
         self._integration_eic: tuple | None = None
         self.masks.grid = self.grid
@@ -757,6 +788,11 @@ class Session:
         self._revision = 0
         self._subscribers: list[Callable[[dict], None]] = []
         self._executor = ThreadPoolExecutor(max_workers, thread_name_prefix="pygcxgc")
+        # structures (spec §8): replace ``pubchem`` to stub the online lookup
+        self.pubchem = PubChem()
+        self._structure_cache: StructureCache | None = None
+        self._structure_jobs: dict[tuple, Job] = {}
+        self._svg_cache: OrderedDict = OrderedDict()
 
     def close(self) -> None:
         """Cancel running jobs and stop the worker pool."""
@@ -764,6 +800,8 @@ class Session:
             if not job.done:
                 job.cancel()
         self._executor.shutdown(wait=False, cancel_futures=True)
+        if self._structure_cache is not None:
+            self._structure_cache.close()
 
     # ------------------------------------------------------------ events
     @property
@@ -852,7 +890,12 @@ class Session:
         }
 
     def update_settings(self, changes: dict) -> dict:
-        return self.settings.update(changes)
+        """Merge ``changes``; new search settings re-search the selections."""
+        before = self.settings.get("search")
+        settings = self.settings.update(changes)
+        if settings.get("search") != before:
+            self._research("Search settings changed")
+        return settings
 
     # ------------------------------------------------------------ documents
     def document(self, document_id: str, kind: str | None = None) -> Document:
@@ -1074,33 +1117,112 @@ class Session:
             corrected,
         )
 
-    def select(self, document_id: str, **point) -> Selection:
+    def select(
+        self, document_id: str, mask_id: str | None = None, **point
+    ) -> Selection:
         """
-        Select a point (see :meth:`spectrum` for the arguments).
+        Select a point (see :meth:`spectrum` for the arguments), or with
+        ``mask_id`` the summed spectrum of a mask (spec MS-11).
 
         The library hits are computed by :meth:`search`.
         """
         doc = self.document(document_id, "ms")
         assert isinstance(doc, MSDocument)
-        selection = Selection(self.spectrum(document_id, **point))
+        if mask_id is not None:
+            selection = self._region_selection(doc, mask_id)
+        else:
+            selection = Selection(self.spectrum(document_id, **point))
         with doc.lock:
             doc.selection = selection
         self.emit("selection.changed", doc.id, selection=selection.info())
         return selection
 
+    def _region_selection(self, doc: MSDocument, mask_id: str) -> Selection:
+        with doc.lock:
+            mask = self._mask(doc, mask_id).copy()
+            data, params, grid = doc.data, doc._params, doc.grid
+        try:
+            weights = mask.rasterize(grid, "lower")
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
+        n_pixels = int((weights > 0).sum())
+        if not n_pixels:
+            raise InvalidRequest(f"The mask {mask.name!r} is empty")
+        corrected = data.region_spectrum(weights, snr=params.snr, label=mask.name)
+        raw = data.region_spectrum(weights, subtract_background=False)
+        result = SpectrumResult(
+            doc.id,
+            -1,
+            -1,
+            -1,
+            corrected.rt1,
+            corrected.rt2,
+            1,
+            False,
+            data.baseline.image_model.describe(),
+            params.snr,
+            raw,
+            corrected,
+        )
+        region = {"mask_id": mask.id, "name": mask.name, "n_pixels": n_pixels}
+        return Selection(result, region=region)
+
     def _refresh_selection(self, doc: MSDocument) -> None:
+        """Re-extract (and re-search) the selection after re-processing."""
         sel = doc.selection
         if sel is None:
             return
         s = sel.spectrum
         try:
-            new = self.spectrum(doc.id, scan=s.scan, n_average=s.n_average, snap=s.snap)
+            if sel.region is not None:
+                new = self._region_selection(doc, sel.region["mask_id"])
+            else:
+                new = Selection(
+                    self.spectrum(
+                        doc.id, scan=s.scan, n_average=s.n_average, snap=s.snap
+                    )
+                )
         except SessionError:
             doc.selection = None
             self.emit("selection.changed", doc.id, selection=None)
             return
-        doc.selection = Selection(new)
-        self.emit("selection.changed", doc.id, selection=doc.selection.info())
+        new.id = sel.id  # the same point, re-extracted
+        doc.selection = new
+        if sel.hits is not None:
+            new.hits, new.libraries = self._search_spectrum(
+                new.spectrum.corrected, doc.data.mass_range, None
+            )
+        self.emit("selection.changed", doc.id, selection=new.info())
+
+    def _research(self, reason: str) -> Job | None:
+        """
+        Search the selections again (libraries or search settings changed,
+        spec LIB-2), as a job. Only selections that were searched before.
+        """
+        docs = [
+            d
+            for d in self.documents.values()
+            if isinstance(d, MSDocument)
+            and d.selection is not None
+            and d.selection.hits is not None
+        ]
+        if not docs:
+            return None
+
+        def work(_job: Job):
+            for doc in docs:
+                sel = doc.selection
+                if sel is None or sel.hits is None:
+                    continue
+                hits, libs = self._search_spectrum(
+                    sel.spectrum.corrected, doc.data.mass_range, None
+                )
+                if doc.selection is sel:  # not replaced meanwhile
+                    sel.hits, sel.libraries = hits, libs
+                    self.emit("selection.changed", doc.id, selection=sel.info())
+            return {"n_documents": len(docs), "reason": reason}
+
+        return self.submit("search", "Searching again", work)
 
     def active_libraries(self) -> list[LibraryRecord]:
         return [
@@ -1110,8 +1232,17 @@ class Session:
         ]
 
     def search_parameters(self, mass_range=None) -> SearchParameters:
+        """
+        Search parameters from the settings. The mass range defaults to
+        ``mass_range`` (the acquired range); ``search.mz_min``/``mz_max``
+        narrow it.
+        """
         s = self.settings.get("search", {})
         lo, hi = mass_range if mass_range else (None, None)
+        if s.get("mz_min") is not None:
+            lo = int(s["mz_min"]) if lo is None else max(lo, int(s["mz_min"]))
+        if s.get("mz_max") is not None:
+            hi = int(s["mz_max"]) if hi is None else min(hi, int(s["mz_max"]))
         return SearchParameters(
             mz_min=lo,
             mz_max=hi,
@@ -1212,67 +1343,118 @@ class Session:
             records = self.active_libraries() if identify else []
             job.report(0.02, "Detecting peaks")
             table = detect_peaks(data, snr=snr)
-            hits: dict[int, list[Hit]] = {}
-            n_lib = max(len(records), 1)
-            for k, rec in enumerate(records):
-                if not len(table):
-                    break
-
-                def progress(f, k=k, rec=rec):
-                    job.report(0.1 + 0.9 * (k + f) / n_lib, f"Identifying ({rec.name})")
-
-                params = self.search_parameters(data.mass_range)
-                found, lib_hits = identify_peaks(
-                    data, table, rec.library, params, n_average, progress
-                )
-                found["library"] = rec.name
-                for peak_hits in lib_hits.values():
-                    for h in peak_hits:
-                        h.library = rec.name
-                        h.extra["library_id"] = rec.id
-                if k == 0:
-                    table = found
-                else:
-                    better = found["match"] > table["match"]
-                    for col in IDENTITY_COLUMNS:
-                        table.loc[better, col] = found.loc[better, col]
-                for pid, peak_hits in lib_hits.items():
-                    combined = hits.get(pid, []) + peak_hits
-                    combined.sort(key=lambda h: h.match, reverse=True)
-                    hits[pid] = combined[: params.n_hits]
-            for col in IDENTITY_COLUMNS:
-                if col not in table:
-                    table[col] = (
-                        "" if col in ("name", "formula", "cas", "library") else 0
-                    )
-            table["baseline"] = data.baseline.describe()
+            table, hits = self._identify(job, data, table, records, n_average)
             table["assigned_by"] = np.where(table["name"] != "", "library", "")
             table["category"] = ""
-            with doc.lock:
-                changed = doc.data is not data
-                doc.peaks = table
-                doc.peak_hits = hits
-                doc.peaks_info = {
-                    "stale": changed,
-                    "stale_reason": "Processing changed during detection"
-                    if changed
-                    else None,
-                    "libraries": [r.name for r in records],
-                    "library_ids": [r.id for r in records],
-                    "baseline": data.baseline.describe(),
-                    "snr": float(snr),
-                    "n_average": int(n_average),
-                }
-            self.emit(
-                "peaks.updated",
-                doc.id,
-                n_peaks=len(table),
-                stale=doc.peaks_info["stale"],
-            )
+            self._store_peaks(doc, data, table, hits, records, snr, n_average)
             return {"n_peaks": len(table)}
 
         label = "Detecting & identifying peaks" if identify else "Detecting peaks"
         return self.submit("peaks", label, work, doc.id)
+
+    def reidentify_peaks(self, document_id: str) -> Job:
+        """
+        Identify the peaks again with the active libraries (job, spec LIB-2).
+
+        Peaks named or assigned by the user keep their identity and deleted
+        peaks stay deleted. If the data were re-processed since the peaks
+        were detected, their positions are stale: the peaks are detected
+        again with the same settings.
+        """
+        doc = self.document(document_id, "ms")
+        assert isinstance(doc, MSDocument)
+        with doc.lock:
+            if doc.peaks is None:
+                raise InvalidRequest("Detect peaks first")
+            info = dict(doc.peaks_info)
+            same_data = doc._peaks_data is doc.data
+        snr = float(info.get("snr", 10.0))
+        n_average = int(info.get("n_average", 3))
+        if not same_data:
+            return self.detect_peaks(doc.id, snr, True, n_average)
+
+        def work(job: Job):
+            data = doc.data
+            with doc.lock:
+                old = doc.peaks.copy()
+                old_hits = dict(doc.peak_hits)
+            records = self.active_libraries()
+            user = (old["assigned_by"] == "user").to_numpy()
+            found, hits = self._identify(job, data, old.copy(), records, n_average)
+            table = old.copy()
+            for col in IDENTITY_COLUMNS:
+                table.loc[~user, col] = found.loc[~user, col]
+            table.loc[~user, "assigned_by"] = np.where(
+                table.loc[~user, "name"] != "", "library", ""
+            )
+            for pid in table.loc[user, "peak_id"]:
+                if pid in old_hits:
+                    hits.setdefault(pid, old_hits[pid])
+            self._store_peaks(doc, data, table, hits, records, snr, n_average)
+            return {"n_peaks": len(table)}
+
+        return self.submit("peaks", "Identifying peaks", work, doc.id)
+
+    def _identify(self, job: Job, data, table, records, n_average):
+        """Identify ``table`` with every library; the best match wins."""
+        hits: dict[int, list[Hit]] = {}
+        n_lib = max(len(records), 1)
+        for k, rec in enumerate(records):
+            if not len(table):
+                break
+
+            def progress(f, k=k, rec=rec):
+                job.report(0.1 + 0.9 * (k + f) / n_lib, f"Identifying ({rec.name})")
+
+            params = self.search_parameters(data.mass_range)
+            found, lib_hits = identify_peaks(
+                data, table, rec.library, params, n_average, progress
+            )
+            found["library"] = rec.name
+            for peak_hits in lib_hits.values():
+                for h in peak_hits:
+                    h.library = rec.name
+                    h.extra["library_id"] = rec.id
+            if k == 0:
+                table = found
+            else:
+                better = found["match"] > table["match"]
+                for col in IDENTITY_COLUMNS:
+                    table.loc[better, col] = found.loc[better, col]
+            for pid, peak_hits in lib_hits.items():
+                combined = hits.get(pid, []) + peak_hits
+                combined.sort(key=lambda h: h.match, reverse=True)
+                hits[pid] = combined[: params.n_hits]
+        if not records:
+            for col in IDENTITY_COLUMNS:
+                table[col] = "" if col in ("name", "formula", "cas", "library") else 0
+        for col in IDENTITY_COLUMNS:
+            if col not in table:
+                table[col] = "" if col in ("name", "formula", "cas", "library") else 0
+        table["baseline"] = data.baseline.describe()
+        return table, hits
+
+    def _store_peaks(self, doc, data, table, hits, records, snr, n_average) -> None:
+        with doc.lock:
+            changed = doc.data is not data
+            doc.peaks = table
+            doc.peak_hits = hits
+            doc._peaks_data = data
+            doc.peaks_info = {
+                "stale": changed,
+                "stale_reason": "Processing changed during detection"
+                if changed
+                else None,
+                "libraries": [r.name for r in records],
+                "library_ids": [r.id for r in records],
+                "baseline": data.baseline.describe(),
+                "snr": float(snr),
+                "n_average": int(n_average),
+            }
+        self.emit(
+            "peaks.updated", doc.id, n_peaks=len(table), stale=doc.peaks_info["stale"]
+        )
+        self._prefetch_structures(hits)
 
     def peaks(self, document_id: str) -> tuple[pd.DataFrame | None, dict]:
         """The peak table (or ``None``) and its metadata (stale, libraries, ...)."""
@@ -1840,6 +2022,7 @@ class Session:
                 if used and used != active_ids:
                     names = ", ".join(doc.peaks_info.get("libraries", []))
                     self._mark_peaks_stale(doc, f"Identified with {names}")
+        self._research("Libraries changed")
 
     def remove_library(self, library_id: str) -> None:
         with self._lock:
@@ -1849,6 +2032,8 @@ class Session:
         saved = [p for p in self.settings.get("libraries", []) if p != rec.path]
         self.settings.update({"libraries": saved})
         self.emit("library.updated", None, library={**rec.info(), "status": "removed"})
+        if rec.active:
+            self._research("Library removed")
 
     def library_entry(self, library_id: str, index: int):
         """One library spectrum (for the head-to-tail plot)."""
@@ -1858,6 +2043,158 @@ class Session:
         if not 0 <= index < len(rec.library):
             raise NotFound(f"No spectrum {index} in {rec.name}")
         return rec.library.entry(index)
+
+    # ------------------------------------------------------------ structures
+    @property
+    def structure_cache(self) -> StructureCache:
+        """SQLite cache of structure lookups (``structures.sqlite``)."""
+        with self._lock:
+            if self._structure_cache is None:
+                folder = self.cache_dir or default_cache_dir()
+                try:
+                    self._structure_cache = StructureCache(folder / "structures.sqlite")
+                except (OSError, sqlite3.Error):
+                    self._structure_cache = StructureCache()  # in memory
+            return self._structure_cache
+
+    def structure(
+        self, library_id: str, index: int, online: bool | None = None
+    ) -> dict:
+        """
+        Structure of a library entry (spec §8).
+
+        Identifiers stored in the entry and earlier lookups answer at once.
+        Otherwise the online setting (``structures.online``: ``ask``, ``on``
+        or ``off``; ``online`` overrides it) decides: ``on`` starts a PubChem
+        lookup job.
+
+        Returns
+        -------
+        dict
+            ``status`` is ``found`` (with ``structure``), ``not_found``,
+            ``ask`` (the user has not decided about online lookups),
+            ``offline`` (online lookups are off) or ``pending`` (with ``job``;
+            ask again when it has finished). ``depiction`` tells whether
+            :meth:`structure_svg` can draw structures (RDKit installed).
+        """
+        rec = self.library(library_id)
+        entry = self.library_entry(library_id, index)
+        info: dict[str, Any] = {
+            "library_id": library_id,
+            "index": int(index),
+            "name": entry.name,
+            "formula": entry.formula,
+            "mw": entry.mw,
+            "cas": entry.cas,
+            "nist_no": entry.nist_no,
+            "status": "not_found",
+            "structure": None,
+            "job": None,
+            "depiction": rdkit_available(),
+        }
+        cache = self.structure_cache
+        if is_resolved(entry, cache):
+            found = resolve(entry, cache=cache, source=rec.name)
+            if found is not None:
+                info.update(status="found", structure=found.to_dict())
+            return info
+        if online is None:
+            setting = self.settings.get("structures", {}).get("online", "ask")
+            if setting != "on":
+                info["status"] = "ask" if setting == "ask" else "offline"
+                return info
+        elif not online:
+            info["status"] = "offline"
+            return info
+        info.update(status="pending", job=self._structure_job(rec, entry).to_dict())
+        return info
+
+    def _structure_job(self, rec: LibraryRecord, entry) -> Job:
+        key = (rec.id, entry.index)
+        with self._lock:
+            job = self._structure_jobs.get(key)
+            if job is not None and not job.done:
+                return job
+
+        def work(_job: Job):
+            found = resolve(
+                entry,
+                online=True,
+                cache=self.structure_cache,
+                pubchem=self.pubchem,
+                source=rec.name,
+            )
+            return {"found": found is not None}
+
+        job = self.submit("structure", f"Structure of {entry.name}", work)
+        with self._lock:
+            self._structure_jobs[key] = job
+        job.add_done_callback(lambda _j: self._structure_jobs.pop(key, None))
+        return job
+
+    def _prefetch_structures(self, hits: dict[int, list[Hit]]) -> Job | None:
+        """Resolve the top hits' structures in the background (spec STRUCT-5)."""
+        if self.settings.get("structures", {}).get("online") != "on":
+            return None
+        wanted = {}
+        for peak_hits in hits.values():
+            if peak_hits and peak_hits[0].extra.get("library_id") in self.libraries:
+                h = peak_hits[0]
+                wanted[(h.extra["library_id"], h.index)] = h
+        if not wanted:
+            return None
+        cache = self.structure_cache
+
+        def work(job: Job):
+            entries = []
+            for library_id, index in wanted:
+                rec = self.libraries.get(library_id)
+                if rec is None or rec.library is None:
+                    continue
+                entry = rec.library.entry(index)
+                if not is_resolved(entry, cache):
+                    entries.append((rec, entry))
+            for k, (rec, entry) in enumerate(entries):
+                job.report(k / max(len(entries), 1), entry.name)
+                with contextlib.suppress(OSError):
+                    resolve(
+                        entry,
+                        online=True,
+                        cache=cache,
+                        pubchem=self.pubchem,
+                        source=rec.name,
+                    )
+            return {"n_resolved": len(entries)}
+
+        return self.submit("structure", "Fetching structures", work)
+
+    def structure_svg(
+        self, key: str, theme: str = "light", width: int = 300, height: int = 220
+    ) -> str:
+        """
+        SVG depiction of a resolved structure (by its key), cached per key,
+        theme and size. Raises :class:`NotFound` without RDKit.
+        """
+        if not rdkit_available():
+            raise NotFound("RDKit is not installed: no structure depictions")
+        width, height = int(min(max(width, 50), 1200)), int(min(max(height, 50), 1200))
+        cache_key = (key, theme, width, height)
+        with self._lock:
+            svg = self._svg_cache.get(cache_key)
+        if svg is not None:
+            return svg
+        structure = self.structure_cache.get(key)
+        if structure is None:
+            raise NotFound(f"No structure {key!r}")
+        try:
+            svg = depict_svg(structure, width, height, dark=theme == "dark")
+        except ValueError as exc:
+            raise NotFound(str(exc)) from exc
+        with self._lock:
+            self._svg_cache[cache_key] = svg
+            while len(self._svg_cache) > 256:
+                self._svg_cache.popitem(last=False)
+        return svg
 
     # ------------------------------------------------------------ export
     def export(
@@ -1962,18 +2299,24 @@ class Session:
             return self._write(
                 text.encode(), path, f"{base}_spectrum.txt", "text/plain"
             )
+        if sel.region is not None:
+            title = f"{doc.name} region {sel.region['name']}"
+            where = f'"mask={sel.region["name"]}" "n_pixels={sel.region["n_pixels"]}"'
+            filename = f"{base}_{sel.region['name']}.msp"
+        else:
+            title = f"{doc.name} RT1 {s.rt1:.3f} min RT2 {s.rt2:.3f} s"
+            where = f'"scan={s.scan}" "n_average={s.n_average}"'
+            filename = f"{base}_scan{s.scan}.msp"
         text = (
-            f"Name: {doc.name} RT1 {s.rt1:.3f} min RT2 {s.rt2:.3f} s\n"
-            f'Comments: "scan={s.scan}" "n_average={s.n_average}" "baseline={s.baseline}"\n'
+            f"Name: {title}\n"
+            f'Comments: {where} "baseline={s.baseline}"\n'
             f"Num Peaks: {len(spec.mz)}\n"
             + "".join(
                 f"{int(m)} {v:.6g}\n"
                 for m, v in zip(spec.mz, spec.intensity, strict=True)
             )
         )
-        return self._write(
-            text.encode(), path, f"{base}_scan{s.scan}.msp", "chemical/x-msp"
-        )
+        return self._write(text.encode(), path, filename, "chemical/x-msp")
 
     @staticmethod
     def _write(content: bytes, path, filename: str, media_type: str):

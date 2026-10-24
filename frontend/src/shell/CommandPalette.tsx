@@ -15,6 +15,14 @@ import {
 import { COLORMAPS } from '@/lib/colormaps'
 import { SCALING_LABELS, SCALINGS } from '@/lib/scaling'
 import { basename } from '@/lib/utils'
+import {
+  copySpectrum,
+  detectPeaks,
+  downloadPeaks,
+  downloadSpectrum,
+  setPointSettings,
+  usePointSettings,
+} from '@/store/ms'
 import { closeDocument, setActiveDocument, setLibraryActive, useSession } from '@/store/session'
 import {
   INTERPOLATION_LABELS,
@@ -28,7 +36,7 @@ import { openPath, showOpenDialog } from './openFile'
 import { openSettings } from './SettingsDialog'
 import { setTheme } from './theme'
 import { mod } from './TopBar'
-import { resetLayout } from './Workspace'
+import { resetLayout, showPanel } from './Workspace'
 
 const usePalette = create<{ open: boolean }>(() => ({ open: false }))
 
@@ -45,6 +53,9 @@ export function CommandPalette() {
   const activeId = useSession((s) => s.activeId)
   const libraries = useSession((s) => s.libraries)
   const recent = useSession((s) => s.settings.recent_files ?? NO_FILES)
+  const activeDoc = activeId ? documents[activeId] : undefined
+  const hasSelection = useSession((s) => Boolean(activeId && s.selections[activeId]))
+  const { snap } = usePointSettings()
 
   const run = (fn: () => void) => () => {
     usePalette.setState({ open: false })
@@ -125,6 +136,42 @@ export function CommandPalette() {
                   Interpolation: {INTERPOLATION_LABELS[i]}
                 </CommandItem>
               ))}
+            </CommandGroup>
+          )}
+          {activeDoc?.kind === 'ms' && (
+            <CommandGroup heading="GCxGC-MS">
+              <CommandItem
+                onSelect={run(
+                  () =>
+                    void detectPeaks(
+                      activeDoc.id,
+                      useSession.getState().settings.ms?.peak_snr ?? 10,
+                    ),
+                )}
+              >
+                Detect &amp; identify peaks
+              </CommandItem>
+              {activeDoc.has_peaks && (
+                <CommandItem onSelect={run(() => void downloadPeaks(activeDoc))}>
+                  Export peak table (CSV)
+                </CommandItem>
+              )}
+              {hasSelection && (
+                <>
+                  <CommandItem onSelect={run(() => void copySpectrum(activeDoc.id))}>
+                    Copy spectrum as text
+                  </CommandItem>
+                  <CommandItem onSelect={run(() => void downloadSpectrum(activeDoc.id))}>
+                    Save spectrum as MSP
+                  </CommandItem>
+                </>
+              )}
+              <CommandItem onSelect={run(() => setPointSettings({ snap: !snap }))}>
+                {snap ? 'Turn off snap to apex' : 'Snap to apex'}
+              </CommandItem>
+              <CommandItem onSelect={run(() => showPanel('libraries'))}>
+                Manage libraries…
+              </CommandItem>
             </CommandGroup>
           )}
           {Object.values(libraries).length > 0 && (

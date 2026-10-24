@@ -401,6 +401,15 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
             }
         )
 
+    @api.post(
+        "/documents/{doc_id}/peaks/reidentify",
+        response_model=S.JobStarted,
+        status_code=202,
+    )
+    def reidentify(doc_id: str):
+        """Identify the peaks again with the active libraries (keeps user edits)."""
+        return started(session.reidentify_peaks(doc_id))
+
     @api.patch("/documents/{doc_id}/peaks", status_code=204)
     def edit_peaks(doc_id: str, edits: list[S.PeakEdit]):
         """Rename, assign a hit, categorise or delete peaks."""
@@ -559,6 +568,36 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
             "inchikey": e.inchikey,
         }
         return binary(np.column_stack([e.mz, e.intensity]).astype(np.float32), header)
+
+    @api.get(
+        "/libraries/{library_id}/spectra/{index}/structure",
+        response_model=S.StructureInfo,
+    )
+    def library_structure(library_id: str, index: int, online: bool | None = None):
+        """
+        Structure of a library entry. ``online`` overrides the setting
+        ``structures.online`` for this request (``pending``: a lookup job).
+        """
+        return clean(session.structure(library_id, index, online))
+
+    @api.get(
+        "/structures/{key}.svg",
+        response_class=Response,
+        responses={200: {"content": {"image/svg+xml": {}}}},
+    )
+    def structure_svg(
+        key: str,
+        theme: Literal["light", "dark"] = "light",
+        w: int = Query(300, ge=50, le=1200),
+        h: int = Query(220, ge=50, le=1200),
+    ):
+        """Depiction of a resolved structure (404 without RDKit)."""
+        svg = session.structure_svg(key, theme, w, h)
+        return Response(
+            svg,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
 
     app.include_router(api)
 

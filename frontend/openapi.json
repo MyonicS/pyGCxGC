@@ -1920,6 +1920,30 @@
         "title": "ReferenceBaseline",
         "type": "object"
       },
+      "RegionInfo": {
+        "additionalProperties": true,
+        "properties": {
+          "mask_id": {
+            "title": "Mask Id",
+            "type": "string"
+          },
+          "n_pixels": {
+            "title": "N Pixels",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mask_id",
+          "name",
+          "n_pixels"
+        ],
+        "title": "RegionInfo",
+        "type": "object"
+      },
       "RollingPercentileBaseline": {
         "additionalProperties": false,
         "properties": {
@@ -2024,7 +2048,20 @@
       },
       "SelectRequest": {
         "additionalProperties": false,
+        "description": "A point (pixel or scan), or with ``mask_id`` the summed spectrum of a mask.",
         "properties": {
+          "mask_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Region spectrum of this mask",
+            "title": "Mask Id"
+          },
           "mod_index": {
             "anyOf": [
               {
@@ -2098,6 +2135,12 @@
             ],
             "title": "Hits"
           },
+          "id": {
+            "default": 0,
+            "description": "Increases with every new selection",
+            "title": "Id",
+            "type": "integer"
+          },
           "libraries": {
             "items": {
               "type": "string"
@@ -2112,6 +2155,17 @@
           "n_average": {
             "title": "N Average",
             "type": "integer"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegionInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set for a mask's spectrum"
           },
           "rt1": {
             "anyOf": [
@@ -2264,6 +2318,131 @@
           "intensity"
         ],
         "title": "SpectrumIn",
+        "type": "object"
+      },
+      "StructureData": {
+        "additionalProperties": true,
+        "properties": {
+          "inchi": {
+            "title": "Inchi",
+            "type": "string"
+          },
+          "inchikey": {
+            "title": "Inchikey",
+            "type": "string"
+          },
+          "key": {
+            "description": "For /api/structures/{key}.svg",
+            "title": "Key",
+            "type": "string"
+          },
+          "pubchem_cid": {
+            "title": "Pubchem Cid",
+            "type": "integer"
+          },
+          "smiles": {
+            "title": "Smiles",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "smiles",
+          "inchi",
+          "inchikey",
+          "pubchem_cid",
+          "source",
+          "key"
+        ],
+        "title": "StructureData",
+        "type": "object"
+      },
+      "StructureInfo": {
+        "additionalProperties": true,
+        "description": "Structure of a library entry (spec \u00a78).",
+        "properties": {
+          "cas": {
+            "title": "Cas",
+            "type": "string"
+          },
+          "depiction": {
+            "description": "RDKit can draw the structure",
+            "title": "Depiction",
+            "type": "boolean"
+          },
+          "formula": {
+            "title": "Formula",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lookup, when pending"
+          },
+          "library_id": {
+            "title": "Library Id",
+            "type": "string"
+          },
+          "mw": {
+            "title": "Mw",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "nist_no": {
+            "title": "Nist No",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "found",
+              "not_found",
+              "ask",
+              "offline",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StructureData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "library_id",
+          "index",
+          "name",
+          "formula",
+          "mw",
+          "cas",
+          "nist_no",
+          "status",
+          "structure",
+          "depiction"
+        ],
+        "title": "StructureInfo",
         "type": "object"
       },
       "ValidationError": {
@@ -3952,6 +4131,66 @@
         "summary": "Detect"
       }
     },
+    "/api/documents/{doc_id}/peaks/reidentify": {
+      "post": {
+        "description": "Identify the peaks again with the active libraries (keeps user edits).",
+        "operationId": "reidentify_api_documents__doc_id__peaks_reidentify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reidentify"
+      }
+    },
     "/api/documents/{doc_id}/selection": {
       "get": {
         "operationId": "get_selection_api_documents__doc_id__selection_get",
@@ -4859,6 +5098,91 @@
         "summary": "Library Spectrum"
       }
     },
+    "/api/libraries/{library_id}/spectra/{index}/structure": {
+      "get": {
+        "description": "Structure of a library entry. ``online`` overrides the setting\n``structures.online`` for this request (``pending``: a lookup job).",
+        "operationId": "library_structure_api_libraries__library_id__spectra__index__structure_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "library_id",
+            "required": true,
+            "schema": {
+              "title": "Library Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "online",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Online"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StructureInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library Structure"
+      }
+    },
     "/api/search": {
       "post": {
         "description": "Search the active libraries. With a document and a point, the point is\nselected first; with a document only, its selection is searched.",
@@ -5055,6 +5379,100 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/structures/{key}.svg": {
+      "get": {
+        "description": "Depiction of a resolved structure (404 without RDKit).",
+        "operationId": "structure_svg_api_structures__key__svg_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "theme",
+            "required": false,
+            "schema": {
+              "default": "light",
+              "enum": [
+                "light",
+                "dark"
+              ],
+              "title": "Theme",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "w",
+            "required": false,
+            "schema": {
+              "default": 300,
+              "maximum": 1200,
+              "minimum": 50,
+              "title": "W",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "h",
+            "required": false,
+            "schema": {
+              "default": 220,
+              "maximum": 1200,
+              "minimum": 50,
+              "title": "H",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/svg+xml": {}
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Structure Svg"
       }
     }
   }

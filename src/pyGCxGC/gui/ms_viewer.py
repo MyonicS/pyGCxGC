@@ -862,7 +862,21 @@ def main(argv=None):
     parser.add_argument(
         "-m", "--modulation", type=float, help="modulation time in seconds"
     )
+    parser.add_argument(
+        "--legacy", action="store_true", help="the deprecated Tk viewer, not the app"
+    )
     args = parser.parse_args(argv)
+    if not args.legacy:
+        from pyGCxGC.app.__main__ import replaces_legacy_tool
+
+        app_args = [args.data] if args.data else []
+        if args.library:
+            app_args += ["-l", args.library]
+        if args.modulation:
+            app_args += ["-m", str(args.modulation)]
+        code = replaces_legacy_tool("pygcxgc-msviewer", app_args)
+        if code is not None:
+            return code
     launch_ms_viewer(args.data, args.library, args.modulation)
     return 0
 
