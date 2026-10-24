@@ -14,6 +14,8 @@ import {
   addLibrary,
   api,
   DATA,
+  download,
+  pngSize,
   imageShown,
   MS,
   openApp,
@@ -300,4 +302,23 @@ test('region spectrum and set as background', async ({ page, request }) => {
   await page.locator('.dv-tab', { hasText: 'Processing' }).click()
   await expect(page.locator('#p-ref')).toHaveValue(String(background.scan))
   await expect(page.getByTestId('processing-panel')).toContainText('Image baseline')
+})
+
+test('spectrum and head-to-tail figures (VIEW-12)', async ({ page }) => {
+  const { at } = await openMs(page, page.request)
+  await page.mouse.click(...at(...TOLUENE))
+  await expect(page.getByTestId('match-header')).toContainText('Toluene')
+
+  await page.getByRole('button', { name: 'Spectrum menu' }).click()
+  await page.getByRole('menuitem', { name: 'Save figure' }).click()
+  const svg = await download(page, () => page.getByRole('menuitem', { name: /^SVG/ }).click())
+  expect(svg.name).toMatch(/^run_scan\d+\.svg$/)
+  expect(svg.data.toString()).toContain('m/z')
+  expect(svg.data.toString()).not.toContain('class=')
+
+  await page.getByRole('button', { name: 'Save match figure' }).click()
+  const png = await download(page, () => page.getByRole('menuitem', { name: /PNG/ }).click())
+  expect(png.name).toMatch(/^run_scan\d+_Toluene\.png$/)
+  const box = (await page.getByTestId('head-to-tail').boundingBox())!
+  expect(pngSize(png.data)).toEqual([Math.floor(box.width) * 2, Math.floor(box.height) * 2])
 })

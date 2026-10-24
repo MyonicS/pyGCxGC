@@ -430,6 +430,19 @@ export class ChromRenderer {
     gl.bindVertexArray(null)
   }
 
+  /**
+   * A frame drawn at `scale` device pixels per CSS pixel, as a PNG data URL
+   * (figure export, spec VIEW-12); the canvas is drawn again at its size.
+   */
+  snapshot(p: DrawParams, cssWidth: number, cssHeight: number, scale: number): string {
+    this.resize(cssWidth, cssHeight, scale)
+    this.draw(p)
+    const url = this.canvas.toDataURL('image/png')
+    this.resize(cssWidth, cssHeight)
+    this.draw(p)
+    return url
+  }
+
   /** RGBA pixels of the last frame, bottom row first (`width × height × 4`). */
   readPixels(): Uint8Array {
     const gl = this.gl

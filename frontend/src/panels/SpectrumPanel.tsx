@@ -5,7 +5,7 @@
  * or saves the spectrum (MS-10) and sets the point as background (BASE-2).
  */
 
-import { ClipboardCopy, Crosshair, Download, Eraser, MoreHorizontal } from 'lucide-react'
+import { ClipboardCopy, Crosshair, Download, Eraser, ImageDown, MoreHorizontal } from 'lucide-react'
 import { useState } from 'react'
 
 import type { DocumentInfo, SelectionInfo } from '@/api/types'
@@ -15,12 +15,18 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Toggle } from '@/components/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { FigureMenuItems } from '@/components/FigureMenu'
+import { figureName, saveSvgPlot, type FigureFormat, type FigureTheme } from '@/lib/figure'
+import { notifyError } from '@/lib/notify'
 import { StickPlot } from '@/ms/StickPlot'
 import {
   copySpectrum,
@@ -167,6 +173,21 @@ function PointSettings() {
   )
 }
 
+function saveSpectrumFigure(
+  doc: DocumentInfo,
+  sel: SelectionInfo,
+  format: FigureFormat,
+  theme: FigureTheme,
+) {
+  const where = sel.region ? `mask-${sel.region.name}` : `scan${sel.scan}`
+  saveSvgPlot(
+    document.querySelector('[data-testid="spectrum-plot"]'),
+    figureName(doc.name, where),
+    format,
+    theme,
+  ).catch((err: unknown) => notifyError('Save figure', err))
+}
+
 function SpectrumMenu({ doc, sel }: { doc: DocumentInfo; sel: SelectionInfo | null }) {
   return (
     <DropdownMenu>
@@ -182,6 +203,16 @@ function SpectrumMenu({ doc, sel }: { doc: DocumentInfo; sel: SelectionInfo | nu
         <DropdownMenuItem onSelect={() => void downloadSpectrum(doc.id)}>
           <Download /> Save as MSP
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ImageDown /> Save figure
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <FigureMenuItems
+              onSave={(format, theme) => sel && saveSpectrumFigure(doc, sel, format, theme)}
+            />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           disabled={!sel || sel.scan < 0}

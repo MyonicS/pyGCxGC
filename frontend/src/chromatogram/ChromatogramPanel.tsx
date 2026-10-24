@@ -3,6 +3,7 @@
 import {
   ChevronDown,
   Hand,
+  ImageDown,
   Lasso,
   Layers,
   MousePointer2,
@@ -34,6 +35,7 @@ import { Toggle } from '@/components/ui/toggle'
 import { Separator } from '@/components/ui/separator'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { FigureMenuItems } from '@/components/FigureMenu'
 import { Kbd } from '@/components/Kbd'
 import { useImages } from '@/store/images'
 import { newMask, useActiveMaskId, useMasks } from '@/store/masks'
@@ -53,6 +55,7 @@ import {
 
 import { ChromView } from './ChromView'
 import { DisplayPopover } from './DisplayPopover'
+import { exportChromatogram } from './figure'
 
 interface ToolInfo {
   tool: Tool
@@ -121,6 +124,7 @@ export function ChromatogramPanel() {
         </Tooltip>
         <Separator orientation="vertical" className="mx-1 h-5!" />
         <DisplayPopover docId={doc.id} display={display} image={image} />
+        <FigureMenu docId={doc.id} disabled={!image} />
         <Separator orientation="vertical" className="mx-1 h-5!" />
         <OverlayToggle
           label="Masks"
@@ -150,6 +154,35 @@ export function ChromatogramPanel() {
         <ChromView doc={doc} />
       </div>
     </div>
+  )
+}
+
+/** Save the view as a figure (spec VIEW-12). */
+function FigureMenu({ docId, disabled }: { docId: string; disabled: boolean }) {
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Save figure"
+              disabled={disabled}
+              data-testid="figure-button"
+            >
+              <ImageDown />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Save the view as a figure</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start">
+        <FigureMenuItems
+          onSave={(format, theme) => void exportChromatogram(docId, format, theme)}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

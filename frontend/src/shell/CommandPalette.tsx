@@ -12,6 +12,7 @@ import {
   CommandList,
   CommandShortcut,
 } from '@/components/ui/command'
+import { exportChromatogram } from '@/chromatogram/figure'
 import { COLORMAPS } from '@/lib/colormaps'
 import { SCALING_LABELS, SCALINGS } from '@/lib/scaling'
 import { basename } from '@/lib/utils'
@@ -144,6 +145,16 @@ export function CommandPalette() {
               <CommandItem onSelect={run(() => resetZoom(activeId))}>
                 Reset zoom<CommandShortcut>0</CommandShortcut>
               </CommandItem>
+              {(['png', 'svg'] as const).flatMap((format) =>
+                (['light', 'dark'] as const).map((theme) => (
+                  <CommandItem
+                    key={`${format}-${theme}`}
+                    onSelect={run(() => void exportChromatogram(activeId, format, theme))}
+                  >
+                    Save figure as {format.toUpperCase()} ({theme})
+                  </CommandItem>
+                )),
+              )}
               {COLORMAPS.map((c) => (
                 <CommandItem key={c} onSelect={display({ colormap: c })}>
                   Colour map: {c}

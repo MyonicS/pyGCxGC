@@ -188,6 +188,8 @@ export interface Settings {
   fid?: { modulation_time?: number | null }
   search?: SearchSettings
   structures?: { online?: 'ask' | 'on' | 'off' }
+  /** Theme of saved figures (default: the app's theme). */
+  figures?: { theme?: 'light' | 'dark' | null }
   ms?: { snap?: boolean; n_average?: number; peak_snr?: number }
   recent_files?: string[]
   ui?: {

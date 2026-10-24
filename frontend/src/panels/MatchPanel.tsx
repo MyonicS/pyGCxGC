@@ -5,10 +5,20 @@
  * the panel is wide (448 px), below it when narrow.
  */
 
+import { ImageDown } from 'lucide-react'
 import { useMemo } from 'react'
 
-import type { DocumentInfo, HitInfo } from '@/api/types'
+import type { DocumentInfo, HitInfo, SelectionInfo } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { FigureMenuItems } from '@/components/FigureMenu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { figureName, saveSvgPlot, type FigureFormat, type FigureTheme } from '@/lib/figure'
+import { notifyError } from '@/lib/notify'
 import { clipMz } from '@/lib/spectrum'
 import { LibraryPicker } from '@/ms/LibraryPicker'
 import { StickPlot } from '@/ms/StickPlot'
@@ -42,6 +52,7 @@ function MatchView({ doc }: { doc: DocumentInfo }) {
       <div className="flex min-h-9 shrink-0 items-center gap-2 border-b px-2 py-1">
         <MatchHeader hit={hit} />
         <LibraryPicker className="ml-auto shrink-0" />
+        <MatchFigureMenu doc={doc} sel={sel} hit={hit} disabled={!spectrum} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col @md:flex-row">
         <div className="min-h-32 min-w-0 flex-1">
@@ -100,5 +111,46 @@ function MatchHeader({ hit }: { hit: HitInfo | undefined }) {
         RMF {Math.round(hit.reverse_match)}
       </Badge>
     </div>
+  )
+}
+
+/** Save the head-to-tail plot as a figure (spec VIEW-12). */
+function MatchFigureMenu({
+  doc,
+  sel,
+  hit,
+  disabled,
+}: {
+  doc: DocumentInfo
+  sel: SelectionInfo | null
+  hit: HitInfo | undefined
+  disabled: boolean
+}) {
+  const save = (format: FigureFormat, theme: FigureTheme) => {
+    const where = sel?.region ? `mask-${sel.region.name}` : sel ? `scan${sel.scan}` : null
+    saveSvgPlot(
+      document.querySelector('[data-testid="head-to-tail"]'),
+      figureName(doc.name, where, hit?.name),
+      format,
+      theme,
+    ).catch((err: unknown) => notifyError('Save figure', err))
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Save match figure"
+          disabled={disabled}
+          className="shrink-0"
+        >
+          <ImageDown />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <FigureMenuItems onSave={save} />
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

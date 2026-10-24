@@ -1,7 +1,7 @@
 /** Shared helpers of the end-to-end tests. */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { expect, type APIRequestContext, type Page } from '@playwright/test'
@@ -79,6 +79,7 @@ export async function resetSession(request: APIRequestContext) {
     ms: { snap: true, n_average: 3, peak_snr: 10 },
     search: { mz_power: 0.5, int_power: 0.5, n_hits: 20, min_match: 0, mz_min: null, mz_max: null },
     structures: { online: 'ask' },
+    figures: { theme: null },
     ui: {
       layouts: { fid: null, ms: null, 'compact-fid': null, 'compact-ms': null },
       last_folder: null,
@@ -129,4 +130,17 @@ export async function addLibrary(request: APIRequestContext, path = LIBRARY) {
     expect(['queued', 'running']).toContain(j.status)
     await new Promise((r) => setTimeout(r, 100))
   }
+}
+
+/** Run `action`, wait for the download it starts and return its name and content. */
+export async function download(page: Page, action: () => Promise<unknown>) {
+  const [file] = await Promise.all([page.waitForEvent('download'), action()])
+  const path = await file.path()
+  return { name: file.suggestedFilename(), data: readFileSync(path) }
+}
+
+/** Width and height of a PNG file. */
+export function pngSize(data: Buffer): [number, number] {
+  expect(data.subarray(1, 4).toString()).toBe('PNG')
+  return [data.readUInt32BE(16), data.readUInt32BE(20)]
 }

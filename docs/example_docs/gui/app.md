@@ -71,6 +71,22 @@ histogram has draggable limits; *Auto* sets them to 0 and the 99.9th
 percentile of the visible data, and *Lock* keeps them when switching between
 documents. Display settings never change the data or the integration.
 
+### Saving figures
+
+The image button in the chromatogram toolbar saves the view as it is shown,
+with axes, colour bar, mask outlines and peak markers:
+
+* *PNG* at twice the screen resolution;
+* *SVG* with vector axes, labels and overlays (the chromatogram itself is an
+  embedded image at twice the screen resolution, as in matplotlib's SVG
+  output).
+
+The Spectrum panel's menu (*Save figure*) and the image button of the Match
+panel save the spectrum and the head-to-tail plot the same way. Each menu
+lets you choose the figure's theme, *Light* (on white) or *Dark*, whatever the
+app shows; the choice is remembered. Colour maps and mask colours are the
+same in both.
+
 ## Processing (FID)
 
 The *Processing* panel holds the parameters of

@@ -19,6 +19,7 @@ import {
   zoomDomain,
   type Domain,
 } from '@/lib/geometry'
+import { backgroundOf, figureName, saveFigure, SKIP_ATTRIBUTE } from '@/lib/figure'
 import { formatValue } from '@/lib/ticks'
 import { debounce } from '@/lib/utils'
 import { loadDetail, loadImage, useImages } from '@/store/images'
@@ -41,9 +42,10 @@ import {
 
 import { Axes, type PlotRect } from './Axes'
 import { ColorBar } from './ColorBar'
+import { registerChromFigure } from './figure'
 import { autoVmax, scanAt, valueAt, visibleRegion } from './imageMath'
 import { Overlays, nearestPeak, type PeakMarker } from './Overlays'
-import { ChromRenderer, WebGLUnavailableError } from './renderer'
+import { ChromRenderer, WebGLUnavailableError, type DrawParams } from './renderer'
 import { ShapeLayer, type Draft } from './ShapeLayer'
 import {
   contains,
@@ -92,6 +94,10 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   const docId = doc.id
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<ChromRenderer | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const plotBgRef = useRef<HTMLDivElement>(null)
+  /** What the last frame was drawn with (figure export). */
+  const frameRef = useRef<{ params: DrawParams; plot: PlotRect; size: typeof size } | null>(null)
   const [glError, setGlError] = useState<string | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -262,7 +268,7 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
     renderer.setLayer('overview', image.overview)
     renderer.setLayer('detail', image.detail)
     renderer.setOverlay(display.showMasks ? overlay.layer : null)
-    renderer.draw({
+    const params: DrawParams = {
       domain,
       vmin: contrast.vmin,
       vmax: contrast.vmax,
@@ -272,7 +278,9 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
       lut,
       shiftRows,
       overlayOpacity: display.showMasks && overlay.layer ? display.maskOpacity : 0,
-    })
+    }
+    renderer.draw(params)
+    frameRef.current = { params, plot, size }
   }, [
     image,
     domain,
@@ -288,7 +296,54 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
     shiftRows,
     overlay.layer,
     redraw,
+    size,
   ])
+
+  // figure export (spec VIEW-12): the image at 2× under the SVG layers
+  const figureBase = figureName(
+    doc.name,
+    doc.kind === 'ms' ? (doc.signal === 'eic' ? `EIC-${doc.mz?.join('-')}` : 'TIC') : null,
+  )
+  useEffect(
+    () =>
+      registerChromFigure(docId, async (format, theme) => {
+        const renderer = rendererRef.current
+        const svg = svgRef.current
+        const frame = frameRef.current
+        if (!renderer || !svg || !frame) throw new Error('The chromatogram is not shown yet')
+        const { params, plot: p, size: s } = frame
+        // the image does not depend on the theme (spec THEME-3)
+        const png = renderer.snapshot(params, p.width, p.height, 2)
+        await saveFigure(svg, figureBase, format, theme, () => {
+          const plotBg = plotBgRef.current
+            ? getComputedStyle(plotBgRef.current).backgroundColor
+            : ''
+          return {
+            width: s.width,
+            height: s.height,
+            background: backgroundOf(containerRef.current),
+            prepare: (clone) => {
+              const ns = 'http://www.w3.org/2000/svg'
+              const after = clone.querySelector('defs')?.nextSibling ?? clone.firstChild
+              const bg = document.createElementNS(ns, 'rect')
+              const img = document.createElementNS(ns, 'image')
+              for (const el of [bg, img]) {
+                el.setAttribute('x', String(p.left))
+                el.setAttribute('y', String(p.top))
+                el.setAttribute('width', String(p.width))
+                el.setAttribute('height', String(p.height))
+              }
+              if (plotBg) bg.setAttribute('fill', plotBg)
+              img.setAttribute('href', png)
+              img.setAttribute('preserveAspectRatio', 'none')
+              clone.insertBefore(bg, after)
+              clone.insertBefore(img, after)
+            },
+          }
+        })
+      }),
+    [docId, figureBase],
+  )
 
   // ------------------------------------------------------------ interaction
   const applyDomain = useCallback(
@@ -637,6 +692,7 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
       }}
     >
       <div
+        ref={plotBgRef}
         className="absolute bg-plot-bg"
         style={{ left: plot.left, top: plot.top, width: plot.width, height: plot.height }}
       />
@@ -648,6 +704,7 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
       />
       {size.width > 0 && domain && transform && (
         <svg
+          ref={svgRef}
           className="pointer-events-none absolute inset-0 overflow-visible"
           width={size.width}
           height={size.height}
@@ -668,54 +725,56 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
               hoverPeak={hoverPeak}
               selection={selection ?? null}
             />
-            <ShapeLayer
-              plot={plot}
-              transform={transform}
-              color={drawColor}
-              draft={draft}
-              cursor={polygon && hover ? rtAt(hover.x, hover.y) : null}
-              pending={pending}
-              selected={
-                editedShape && selectedOp
-                  ? { shape: editedShape, color: selectedOp.mask.color }
-                  : null
-              }
-            />
-            {showCrosshair && (
-              <g>
-                {[0, 1].map((halo) => (
-                  <g
-                    key={halo}
-                    className={halo ? 'stroke-plot-crosshair' : 'stroke-plot-halo'}
-                    strokeWidth={halo ? 1 : 3}
-                    opacity={isDrawTool(tool) ? 0.6 : 1}
-                  >
-                    <line
-                      x1={Math.round(hover.x) + 0.5}
-                      x2={Math.round(hover.x) + 0.5}
-                      y1={plot.top}
-                      y2={plot.top + plot.height}
-                    />
-                    <line
-                      x1={plot.left}
-                      x2={plot.left + plot.width}
-                      y1={Math.round(hover.y) + 0.5}
-                      y2={Math.round(hover.y) + 0.5}
-                    />
-                  </g>
-                ))}
-              </g>
-            )}
-            {drag?.kind === 'zoom' && (
-              <rect
-                x={Math.min(drag.x0, drag.x)}
-                y={Math.min(drag.y0, drag.y)}
-                width={Math.abs(drag.x - drag.x0)}
-                height={Math.abs(drag.y - drag.y0)}
-                className="fill-plot-zoom/15 stroke-plot-zoom"
-                strokeDasharray="4 3"
+            <g {...{ [SKIP_ATTRIBUTE]: '' }}>
+              <ShapeLayer
+                plot={plot}
+                transform={transform}
+                color={drawColor}
+                draft={draft}
+                cursor={polygon && hover ? rtAt(hover.x, hover.y) : null}
+                pending={pending}
+                selected={
+                  editedShape && selectedOp
+                    ? { shape: editedShape, color: selectedOp.mask.color }
+                    : null
+                }
               />
-            )}
+              {showCrosshair && (
+                <g>
+                  {[0, 1].map((halo) => (
+                    <g
+                      key={halo}
+                      className={halo ? 'stroke-plot-crosshair' : 'stroke-plot-halo'}
+                      strokeWidth={halo ? 1 : 3}
+                      opacity={isDrawTool(tool) ? 0.6 : 1}
+                    >
+                      <line
+                        x1={Math.round(hover.x) + 0.5}
+                        x2={Math.round(hover.x) + 0.5}
+                        y1={plot.top}
+                        y2={plot.top + plot.height}
+                      />
+                      <line
+                        x1={plot.left}
+                        x2={plot.left + plot.width}
+                        y1={Math.round(hover.y) + 0.5}
+                        y2={Math.round(hover.y) + 0.5}
+                      />
+                    </g>
+                  ))}
+                </g>
+              )}
+              {drag?.kind === 'zoom' && (
+                <rect
+                  x={Math.min(drag.x0, drag.x)}
+                  y={Math.min(drag.y0, drag.y)}
+                  width={Math.abs(drag.x - drag.x0)}
+                  height={Math.abs(drag.y - drag.y0)}
+                  className="fill-plot-zoom/15 stroke-plot-zoom"
+                  strokeDasharray="4 3"
+                />
+              )}
+            </g>
           </g>
           <Axes plot={plot} domain={domain} />
           <ColorBar

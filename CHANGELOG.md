@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pygcxgc` command (the app).
 - API: structure info and SVG depictions, peak re-identification, region selection.
 - App milestone 4: projects (`*.gcxgc`: files, processing, masks, peak edits, selections, view and layout; *Save project*, `Ctrl+S`; `Session.load`), `gcgc.view` for Jupyter and VS Code notebooks with live state (`masks`, `peaks`, `selection`, `integration`, `library`) and changes from Python (`set_signal`, `select`, `masks.add_rect`, `on`), a compact inline layout, a rotating local log file (*Open log folder*) and the settings and cache folders from `platformdirs`.
+- Figure export (VIEW-12): the chromatogram view, the spectrum and the head-to-tail plot as PNG (2×) or SVG with axes, colour bar and overlays, in a light or dark theme.
 - `pygcxgc` opens a desktop window when pywebview is installed (otherwise the browser); `--headless` only serves. Projects can be passed on the command line.
 - API: active document, view state, projects, log folder; `settings.updated` and `project.updated` events; selections by retention time in `Session.select`; libraries passed as `SpectralLibrary` objects.
 

@@ -252,6 +252,7 @@ export function StickPlot({
               ))}
               {hover && hovered && (
                 <line
+                  data-export-skip=""
                   x1={hover.x}
                   x2={hover.x}
                   y1={model.y(0)}
@@ -273,6 +274,7 @@ export function StickPlot({
               </text>
             )}
             <rect
+              data-export-skip=""
               width={plotW}
               height={plotH}
               fill="transparent"

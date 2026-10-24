@@ -130,6 +130,9 @@ def _run_window(url: str) -> bool:
         import webview
     except ImportError:
         return False
+    # exports and figures are downloads
+    if hasattr(webview, "settings"):
+        webview.settings["ALLOW_DOWNLOADS"] = True
     webview.create_window("pyGCxGC Studio", url, width=1400, height=900)
     webview.start()
     return True

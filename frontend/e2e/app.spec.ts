@@ -8,7 +8,18 @@ import { resolve } from 'node:path'
 
 import { expect, test } from '@playwright/test'
 
-import { api, FID, headers, imageShown, MS, openApp, openDocument, resetSession } from './helpers'
+import {
+  api,
+  download,
+  FID,
+  headers,
+  imageShown,
+  MS,
+  openApp,
+  openDocument,
+  pngSize,
+  resetSession,
+} from './helpers'
 
 test.beforeEach(async ({ request }) => {
   await resetSession(request)
@@ -232,4 +243,63 @@ test('errors appear as toasts with details', async ({ page }) => {
   await expect(toast).toBeVisible()
   await toast.getByRole('button', { name: 'Details' }).click()
   await expect(toast.locator('pre')).toContainText('Traceback')
+})
+
+test('save the view as a PNG and an SVG figure (VIEW-12)', async ({ page, request }) => {
+  const docId = await openDocument(request, FID, { modulation_time: 20 })
+  const created = await api<{ masks: { id: string }[] }>(
+    request,
+    'POST',
+    `/api/documents/${docId}/masks`,
+    { name: 'Region' },
+  )
+  await api(request, 'POST', `/api/documents/${docId}/masks/${created.masks[0].id}/operations`, {
+    shape: { type: 'rect', rt1: [10, 20], rt2: [1, 3] },
+  })
+  await openApp(page)
+  await imageShown(page)
+  const view = (await page.getByTestId('chromatogram').boundingBox())!
+
+  await page.getByTestId('figure-button').click()
+  const png = await download(page, () => page.getByRole('menuitem', { name: /PNG/ }).click())
+  expect(png.name).toBe('Example_FID.png')
+  expect(pngSize(png.data)).toEqual([Math.floor(view.width) * 2, Math.floor(view.height) * 2])
+  expect(png.data.length).toBeGreaterThan(20_000)
+
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await page.getByTestId('figure-button').click()
+  const svg = await download(page, () => page.getByRole('menuitem', { name: /SVG/ }).click())
+  expect(svg.name).toBe('Example_FID.svg')
+  const text = svg.data.toString()
+  expect(text).toContain('<image')
+  expect(text).toContain('data:image/png;base64,')
+  expect(text).toContain('(min)') // the RT1 axis label
+  expect(text).not.toContain('class=')
+  // the image at 2x, axes and the mask outline as vectors
+  expect(text).toMatch(/<path[^>]*stroke:/)
+
+  // the other theme, whatever the app shows; the choice is remembered
+  const background = (t: string) => /<rect[^>]*fill="([^"]+)"/.exec(t)![1]
+  const dark = await page.evaluate(() => document.documentElement.classList.contains('dark'))
+  const other = dark ? 'Light' : 'Dark'
+  await expect(page.getByRole('menu')).toHaveCount(0) // closed after the last export
+  await page.getByTestId('figure-button').click()
+  await page.getByRole('menuitemradio', { name: other }).click()
+  await expect(page.getByRole('menuitemradio', { name: other })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+  const themed = await download(page, () => page.getByRole('menuitem', { name: /SVG/ }).click())
+  expect(background(themed.data.toString())).not.toBe(background(text))
+  // the app keeps its theme
+  expect(await page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(dark)
+  await expect
+    .poll(
+      async () =>
+        (await api<{ figures?: { theme?: string } }>(request, 'GET', '/api/settings')).figures
+          ?.theme,
+    )
+    .toBe(other.toLowerCase())
+  // the screen is drawn again at its own size
+  await expect(page.getByTestId('chromatogram-canvas')).toBeVisible()
 })

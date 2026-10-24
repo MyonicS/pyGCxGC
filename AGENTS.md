@@ -186,6 +186,17 @@ files you change, and do not reformat untouched legacy code.
   can be older than an event (e.g. recent files written by a save). Opening a
   project writes its layouts into the settings, then emits `project.updated`
   (`opened`), on which the workspace reloads its layout.
+* **Figures.** `lib/figure.ts` clones a plot's SVG with computed styles
+  inlined (elements marked `data-export-skip` are dropped: crosshair,
+  drafts, hover marks); `ChromView` registers an exporter per document that
+  adds the WebGL image drawn at 2× (`ChromRenderer.snapshot`, which needs
+  `preserveDrawingBuffer`). PNGs embed the Latin `@font-face` files, because
+  an SVG drawn as an image cannot load fonts. The figure theme is applied
+  by `withTheme` (toggles the root `dark` class with transitions disabled,
+  reads the styles and restores it in the same task, so nothing flickers).
+  A Radix menu that is still closing swallows a click on its trigger, so
+  e2e tests wait for `getByRole('menu')` to be gone before reopening. DOM
+  tests must be named `*.browser.test.ts` (the `unit` project has no DOM).
 * **Notebook viewer.** `ServerThread` binds and `listen()`s before
   uvicorn starts (also in `serve`, so `READY` means connectable). One viewer
   per process (`viewer._current`); `view(path)` opens in the background and
