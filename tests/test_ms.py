@@ -21,8 +21,17 @@ from pyGCxGC.ms import (
     read_andi,
     search_spectrum,
 )
-from pyGCxGC.ms.nist import NAME_TOKENS, format_cas, read_nist_mainlib
+from pyGCxGC.ms.nist import (
+    BOND_AROMATIC,
+    NAME_TOKENS,
+    decode_structure,
+    format_cas,
+    read_nist_mainlib,
+    read_nist_ri,
+    ri_by_compound,
+)
 from pyGCxGC.ms.peaks import detect_peaks, identify_peaks
+from pyGCxGC.ms.structures import rdkit_available
 
 LOCAL_NIST = Path(__file__).parents[1] / "local_data" / "MSSEARCH" / "MAINLIB"
 
@@ -66,10 +75,17 @@ def _encode_abundances(values: list[int]) -> bytes:
 
 
 def _nist_record(
-    name: bytes, formula: str, cas: int, nist_no: int, mw: int, peaks: dict
+    name: bytes,
+    formula: str,
+    cas: int,
+    nist_no: int,
+    mw: int,
+    peaks: dict,
+    rid: bytes = b"\0\0\0\0",
 ) -> bytes:
     masses = sorted(peaks)
     body = struct.pack("<HIIIHH", 0, cas, nist_no, 0, mw, 1)
+    body = rid[:2] + body[2:10] + rid[2:] + body[12:]
     body += name + b"\0" + formula.encode() + b"\0"
     body += struct.pack("<h", len(masses))
     body += _encode_masses(masses) + _encode_abundances([peaks[m] for m in masses])
@@ -110,6 +126,238 @@ def test_nist_reader_roundtrip(tmp_path):
 def test_format_cas():
     assert format_cas(71432) == "71-43-2"
     assert format_cas(0) == ""
+
+
+def _coord(v: int) -> bytes:
+    out = bytearray()
+    while v > 126:
+        out.append(0x7F)
+        v -= 127
+    while v < -126:
+        out.append(0x81)
+        v += 127
+    out.append(v & 0xFF)
+    return bytes(out)
+
+
+def _endpoint(e: int) -> bytes:
+    out = bytearray()
+    while e >= 0x7F:
+        out.append(0x7F)
+        e -= 127
+    out.append(e)
+    return bytes(out)
+
+
+def _struct_payload(seeds, chain=(), rings=(), labels=(), circles=(), orders=None):
+    """Encode a drawing as in ``struct.db`` (see ``pyGCxGC.ms.nist``)."""
+    n_bonds = len(seeds) + len(chain) + len(rings)
+    orders = orders or [1] * n_bonds
+    mask = sum((o - 1) << (2 * i) for i, o in enumerate(orders))
+    out = bytearray([len(seeds), len(chain), len(rings), len(labels), len(circles)])
+    out += mask.to_bytes((2 * n_bonds + 7) // 8, "little")
+    for (x1, y1), (x2, y2) in seeds:
+        out += _coord(x1) + _coord(y1) + _coord(x2) + _coord(y2)
+    for (x, y), parent in chain:
+        out += _coord(x) + _coord(y) + _endpoint(parent)
+    for a, b in rings:
+        out += _endpoint(a) + _endpoint(b)
+    for target, code in labels:
+        if isinstance(target, tuple):  # label without an atom
+            out += b"\xff" + _coord(target[0]) + _coord(target[1])
+        else:
+            out += _endpoint(target)
+        out += code.encode() + b"\0" if isinstance(code, str) else bytes([code])
+    for x, y in circles:
+        out += _coord(x) + _coord(y)
+    return bytes(out)
+
+
+# Own drawings (bond length 20), not NIST data.
+ETHANOL = _struct_payload([((0, 0), (17, -10))], [((34, 0), 1)], labels=[(2, 2)])
+BENZENE = _struct_payload(
+    [((0, -20), (17, -10))],
+    [((17, 10), 1), ((0, 20), 2), ((-17, 10), 4), ((-17, -10), 6)],
+    rings=[(8, 0)],
+    circles=[(0, 0)],
+    orders=[BOND_AROMATIC] * 6,
+)
+SALT = _struct_payload(  # tetramethylammonium bromide, far from the origin
+    [((200, 0), (220, 0))],
+    [((180, 0), 0), ((200, 20), 0), ((200, -20), 0)],
+    labels=[(0, "N+"), ((240, -150), "Br-")],
+)
+CHAIN = _struct_payload(  # C70: endpoints above 127 need the escape byte
+    [((0, 0), (17, -10))],
+    [((17 * i, -10 * (i % 2)), 1 if i == 2 else 2 * (i - 2)) for i in range(2, 70)],
+)
+
+
+def _write_mainlib(root: Path, drawings: dict[bytes, bytes], records: bytes) -> Path:
+    """Write ``nist.db``, ``struct.db`` and ``struct.in6`` into ``root/MAINLIB``."""
+    mainlib = root / "MAINLIB"
+    mainlib.mkdir()
+    header = bytearray(b"\xff" * 512)
+    header[:128] = b"\0" * 128
+    resource = b"\xfe\xfe" + struct.pack("<II", 31, 9) + b"\0" * 21
+    (mainlib / "nist.db").write_bytes(bytes(header) + resource + records + b"\xff" * 64)
+    db, entries = bytearray(b"\0"), []
+    for rid, payload in drawings.items():
+        entries.append(struct.pack("<I", len(db)) + rid)
+        db += struct.pack("<H", len(payload)) + payload
+    (mainlib / "struct.db").write_bytes(bytes(db))
+
+    def node(items):
+        raw = struct.pack("<IIHH", 0, 0, len(items), 8 * len(items)) + b"\0" * 6
+        return (raw + b"".join(items)).ljust(0x200, b"\0")
+
+    decoy = [struct.pack("<I", 12345) + rid for rid in drawings]  # not a leaf
+    index = b"\xff" * 0x400 + node(entries) + node(decoy)
+    (mainlib / "struct.in6").write_bytes(index)
+    return mainlib
+
+
+def test_nist_structure_decoding():
+    s = decode_structure(ETHANOL)
+    assert [a.element for a in s.atoms] == ["C", "C", "O"]
+    assert [a.hydrogens for a in s.atoms] == [None, None, 1]
+    assert s.bonds == [(0, 1, 1), (2, 1, 1)]
+    assert s.stereo == b""
+
+    s = decode_structure(BENZENE)
+    assert {o for _, _, o in s.bonds} == {BOND_AROMATIC}
+    assert (5, 0, BOND_AROMATIC) in s.bonds
+    assert s.circles == [(0, 0)]
+
+    s = decode_structure(SALT)
+    assert (s.atoms[0].element, s.atoms[0].charge, s.atoms[0].x) == ("N", 1, 200)
+    br = s.atoms[-1]
+    assert (br.element, br.charge, br.hydrogens, br.x, br.y) == ("Br", -1, 0, 240, -150)
+    assert len(s.bonds) == 4
+
+    s = decode_structure(CHAIN)
+    assert len(s.atoms) == 70
+    assert s.bonds[-1] == (69, 68, 1)
+    with pytest.raises(ValueError, match="Malformed"):
+        decode_structure(ETHANOL[:-1])
+    with pytest.raises(ValueError, match="label code"):
+        decode_structure(ETHANOL[:-1] + bytes([0x1F]))  # unknown label code
+
+
+def _structure_library(tmp_path):
+    rids = [b"\0\1\0\0", b"\0\1\1\0", b"\0\2\0\0", b"\0\2\1\0"]
+    peaks = {31: 999, 45: 500}
+    records = b"".join(
+        _nist_record(name, formula, 0, i, 46, peaks, rid=rid)
+        for i, (name, formula, rid) in enumerate(
+            [
+                (b"Ethanol", "C2H6O", rids[0]),
+                (b"Benzene", "C6H6", rids[1]),
+                (b"Salt", "C4H12BrN", rids[2]),
+                (b"No drawing", "X", rids[3]),
+            ]
+        )
+    )
+    drawings = {rids[0]: ETHANOL, rids[1]: BENZENE, rids[2]: SALT}
+    return _write_mainlib(tmp_path, drawings, records)
+
+
+def test_nist_structures_in_library(tmp_path):
+    mainlib = _structure_library(tmp_path)
+    data = read_nist_mainlib(mainlib)
+    assert [bool(s) for s in data["nist_structure"]] == [True, True, True, False]
+    lib = load_library(mainlib, cache_dir=tmp_path / "cache")
+    again = load_library(mainlib, cache_dir=tmp_path / "cache")
+    assert list(again.nist_structure) == data["nist_structure"]
+    assert lib[3].smiles == ""
+
+
+def _ctree_file(payloads: list[bytes]) -> bytes:
+    """A c-tree variable-length data file holding ``payloads`` as active records."""
+    header = bytearray(b"\xff" * 512)
+    header[:128] = b"\0" * 128
+    body = b"".join(
+        b"\xfa\xfa" + struct.pack("<II", len(p) + 10, len(p)) + p for p in payloads
+    )
+    return bytes(header) + body + b"\xff" * 64
+
+
+def _ri_record(key, name, formula, ri, phase_type, ri_type="Normal alkane RI", **kw):
+    fields = dict.fromkeys(
+        ("column_class", "phase", "length", "carrier", "support", "diameter", "film"),
+        "",
+    )
+    fields.update(column_class="Capillary", length="30 m", diameter="250 um")
+    fields.update(kw)
+    program = ["Ramp", "50 C", "300 C", "5 K/min", "2 min", "10 min", "", "2001ABC/DEF"]
+    values = [key, name, formula, ri, fields["column_class"], phase_type]
+    values += [fields[k] for k in ("phase", "length", "carrier", "support")]
+    values += [fields["diameter"], fields["film"], ri_type, *program]
+    return "\t".join(values).encode("latin-1") + b"\0"
+
+
+def test_nist_retention_indices(tmp_path):
+    mainlib = tmp_path / "MAINLIB"
+    mainlib.mkdir()
+    records = [
+        _ri_record("C124185", "Decane", "C10H22", "1000", "All column types"),
+        _ri_record("C108883", "Toluene", "C7H8", "765", "SSNP", film="0.25 um"),
+        _ri_record("C108883", "Toluene", "C7H8", "771", "semi-std-non-polar"),
+        _ri_record(
+            "C108883",
+            "Toluene",
+            "C7H8",
+            "750",
+            "Semi-standard non-polar",
+            column_class="Packed",
+        ),  # fmt: skip
+        _ri_record("C108883", "Toluene", "C7H8", "210", "SSNP", ri_type="Lee RI"),
+        _ri_record("C108883", "Toluene", "C7H8", "1040", "Standard polar"),
+        _ri_record("U101479", '"1-Iodo-2-methylnonane', "C10H21I", "1350.5", "SSNP"),
+    ]
+    (mainlib / "ri.dat").write_bytes(_ctree_file(records))
+
+    table = read_nist_ri(tmp_path)
+    assert len(table) == 7
+    assert table["cas"].iloc[1] == "108-88-3"
+    assert table["nist_no"].tolist() == [0] * 6 + [101479]
+    assert table["name"].iloc[6] == "1-Iodo-2-methylnonane"
+    assert table["phase_type"].tolist()[:3] == ["all"] + ["semi-standard non-polar"] * 2
+    assert table["ri_type"].iloc[4] == "lee"
+    assert table["diameter_mm"].iloc[0] == pytest.approx(0.25)
+    assert table["film_um"].iloc[1] == pytest.approx(0.25)
+    assert table["rate_k_min"].iloc[0] == 5.0
+
+    ssnp = ri_by_compound(table)
+    assert ssnp.loc["C108883", "ri"] == 768.0  # no packed, Lee or polar values
+    assert ssnp.loc["C108883", "n"] == 2
+    assert ssnp.loc["C124185", "ri"] == 1000.0  # n-alkanes count for every phase
+    assert ssnp.loc["U101479", "nist_no"] == 101479
+    polar = ri_by_compound(table, "standard polar")
+    assert polar["ri"].to_dict() == {"C108883": 1040.0, "C124185": 1000.0}
+
+
+@pytest.mark.skipif(not LOCAL_NIST.exists(), reason="no local NIST library")
+def test_local_nist_retention_indices():
+    table = read_nist_ri(LOCAL_NIST)
+    assert len(table) > 400_000
+    ssnp = ri_by_compound(table).set_index("cas")
+    assert ssnp.loc["544-76-3", "ri"] == 1600.0  # hexadecane
+    assert abs(ssnp.loc["108-88-3", "ri"] - 766) < 10  # toluene on DB-5 type
+    assert abs(ssnp.loc["91-20-3", "ri"] - 1182) < 10  # naphthalene
+
+
+@pytest.mark.skipif(not rdkit_available(), reason="RDKit is not installed")
+def test_nist_structure_smiles(tmp_path):
+    lib = SpectralLibrary.from_nist(_structure_library(tmp_path))
+    assert [lib[i].smiles for i in range(4)] == [
+        "CCO",
+        "c1ccccc1",
+        "C[N+](C)(C)C.[Br-]",
+        "",
+    ]
+    assert lib[0].inchikey == "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
+    assert lib.smiles[0] == ""  # converted on demand, not stored
 
 
 # ------------------------------------------------------------------ library
@@ -285,6 +533,28 @@ def test_local_nist_library():
     entry = lib[idx[0]]
     assert entry.intensity.max() == 999
     assert entry.mz[np.argmax(entry.intensity)] == 91
+
+
+@pytest.mark.skipif(
+    not (LOCAL_NIST.exists() and rdkit_available()), reason="no local NIST or RDKit"
+)
+def test_local_nist_structures():
+    from rdkit import Chem
+    from rdkit.Chem.rdMolDescriptors import CalcMolFormula
+
+    lib = load_library(LOCAL_NIST)
+    rng = np.random.default_rng(0)
+    sample = rng.choice(len(lib), 1000, replace=False)
+    matched = 0
+    for i in sample:
+        smiles, _ = lib.structure_ids(i)
+        mol = Chem.MolFromSmiles(smiles) if smiles else None
+        if mol is not None:
+            formula = CalcMolFormula(mol).replace("+", "").replace("-", "")
+            matched += formula == lib.formula[i]
+    assert matched >= 970  # all formulas match; charges and D are written differently
+    toluene = [i for i, n in enumerate(lib.compound_name) if n == "Toluene"]
+    assert lib[toluene[0]].smiles == "Cc1ccccc1"
 
 
 # ------------------------------------------------------------------ baseline
@@ -466,7 +736,9 @@ def test_old_npz_cache_still_loads(tmp_path):
     path = lib.save(tmp_path / "v1.npz")
     with np.load(path) as z:
         arrays = {
-            k: z[k] for k in z.files if not k.startswith(("smiles", "inchi", "pubchem"))
+            k: z[k]
+            for k in z.files
+            if not k.startswith(("smiles", "inchi", "pubchem", "nist_structure"))
         }
     arrays["version"] = np.array([1])
     np.savez(path, **arrays)
@@ -477,7 +749,7 @@ def test_old_npz_cache_still_loads(tmp_path):
     # converted caches are keyed by the cache version, so old ones rebuild
     msp = tmp_path / "lib.msp"
     lib.to_msp(msp)
-    assert libmod.CACHE_VERSION == 2
+    assert libmod.CACHE_VERSION == 3
     cache = libmod.library_cache_file(msp, tmp_path / "cache")
     load_library(msp, cache_dir=tmp_path / "cache")
     assert cache.exists()

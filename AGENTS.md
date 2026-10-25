@@ -45,7 +45,7 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/ms/data.py` | `GCxGC_MS`: folding, spectra, EIC, apex search, modulation estimate |
 | `src/pyGCxGC/ms/baseline.py` | Baseline models: `none`, `modulation_percentile` (default), `rolling_percentile`, spectra-only `local` and `reference` |
 | `src/pyGCxGC/ms/library.py` | `SpectralLibrary` (CSR-like peaks + metadata), MSP I/O, `.npz` cache, `load_library`, MoNA download |
-| `src/pyGCxGC/ms/nist.py` | Reader for NIST MS Search `MAINLIB/nist.db` (format documented in the module docstring) |
+| `src/pyGCxGC/ms/nist.py` | Reader for NIST MS Search `MAINLIB/nist.db`, the structures in `struct.db`/`struct.in6` and the retention indices in `ri.dat` (formats documented in the module docstring) |
 | `src/pyGCxGC/ms/search.py` | Composite match factor / reverse match (Stein & Scott), sparse prescreen |
 | `src/pyGCxGC/ms/peaks.py` | 2D peak detection (local maxima + nearest-apex blob volumes) and batch identification |
 | `src/pyGCxGC/ms/structures.py` | Structure resolver: library identifiers, then opt-in PubChem (`PubChem`, rate limited), SQLite `StructureCache`, RDKit `depict_svg` |
@@ -117,9 +117,15 @@ files you change, and do not reformat untouched legacy code.
   are not aligned with `nist.db` and are not decoded yet. Other MAINLIB files:
   `ichi.dat` is a c-tree file with 306,866 records of NIST-compressed InChI
   strings (e.g. `CH2N2/cAB1A/hA2`, not decoded). `struct.db` holds the
-  structures in a packed binary format that is *not* a c-tree record file
-  (`iter_ctree_records` finds nothing). `ri.dat` is a c-tree file with 447,285
-  plain-text, tab-separated retention-index records keyed by `C<CAS digits>`.
+  structures as `uint16`-length-prefixed 2D drawings, not c-tree records
+  (`iter_ctree_records` finds nothing), and `struct.in6` maps `nist.db` record
+  ids to them (`read_nist_structures`; validation in
+  `docs/research/ms-class-prediction.md`, section F). Stereo is not decoded.
+  `ri.dat` is a c-tree file with 447,285 tab-separated text records
+  (`read_nist_ri`, `ri_by_compound`; section G), keyed by `C<CAS>`,
+  `U<NIST number>` or `R<id>` (no spectrum). Phase types come in 15 spellings
+  (normalised), n-alkanes are stored once with phase type "All column types",
+  and `Lee RI` values are on the PAH scale, so never mix them with alkane RIs.
 * **Search mass range** must be the acquisition range (e.g. 45-500).
   Otherwise library peaks at m/z < 45 penalise every match.
   `SpectralLibrary.search_matrix` caches the sparse matrices per
@@ -142,8 +148,13 @@ files you change, and do not reformat untouched legacy code.
   `fit` runs the modulations in a thread pool (NumPy releases the GIL while
   partitioning), which cut PY_010 from 2.2 s to 0.4 s.
 * **Library cache version 2** adds `smiles`, `inchi`, `inchikey` and
-  `pubchem_cid`. Version 1 `.npz` files still load; converted caches are keyed
-  by the version, so NIST is re-converted once (about 10 s).
+  `pubchem_cid`; **version 3** adds `nist_structure` (base64 `struct.db`
+  record). Older `.npz` files still load; converted caches are keyed by the
+  version, so NIST is re-converted once (about 10-20 s). NIST SMILES/InChIKeys
+  are not stored: `SpectralLibrary.structure_ids` (used by `entry()`) converts
+  the drawing with RDKit on first access (about 1 ms, memoised per library) and
+  leaves them empty without RDKit, so installing RDKit later needs no
+  re-conversion. Converting all of NIST eagerly would add 2-4 minutes.
 * `pyGCxGC.app.session` must not import FastAPI or pydantic, because the Tk
   viewer uses it without the `app` extra (`test_session_needs_no_web_dependencies`).
 * **API security.** `/api` needs `Authorization: Bearer <token>` (WebSocket:

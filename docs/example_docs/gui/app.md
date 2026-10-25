@@ -217,7 +217,8 @@ spectrum points up, the library spectrum down, and the structure is shown
 beside the plot (below it when the panel is narrow).
 
 Structures come from the library entry when it has one (MoNA records carry
-SMILES and InChI). Other compounds can be looked up at PubChem: the first
+SMILES and InChI, and NIST libraries their own drawings, shown without stereo
+when RDKit is installed). Other compounds can be looked up at PubChem: the first
 time, the Match panel asks whether to do so. Only compound identifiers of
 library hits (InChIKey, CAS number, name) are sent, never spectra or file
 names. Answers are cached on your computer, so each compound is looked up

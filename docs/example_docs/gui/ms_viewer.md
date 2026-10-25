@@ -65,7 +65,9 @@ Vendor binary files such as Shimadzu `.qgd` cannot be read directly.
 * **NIST MS Search** main libraries: select the `MAINLIB` folder (or the
   `MSSEARCH` folder containing it). The library is decoded directly from the
   `nist.db` file, so NIST MS Search does not have to run (works on Linux and
-  macOS). The NIST library is licensed software. Only use your own licensed
+  macOS). The structures in `struct.db` are read too and become the SMILES
+  and InChIKey of each entry (needs RDKit; no stereo). The NIST library is
+  licensed software. Only use your own licensed
   copy, and never commit or share the converted cache.
 * **MSP files** (NIST MSP, MoNA, MassBank, ...), optionally zipped.
 * **MoNA GC-MS**: the *Load library…* dialog can download the open MassBank of

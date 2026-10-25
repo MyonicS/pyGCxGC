@@ -39,10 +39,11 @@ META_FIELDS = (
     "inchi",
     "inchikey",
     "pubchem_cid",
+    "nist_structure",
 )
 _INT_FIELDS = ("mw", "nist_no", "db_no", "pubchem_cid")
-CACHE_VERSION = 2  # 2: structure identifiers (smiles, inchi, inchikey, pubchem_cid)
-_READABLE_CACHE_VERSIONS = (1, 2)
+CACHE_VERSION = 3  # 2: smiles, inchi, inchikey, pubchem_cid; 3: nist_structure
+_READABLE_CACHE_VERSIONS = (1, 2, 3)
 
 
 def default_cache_dir() -> Path:
@@ -123,6 +124,7 @@ class SpectralLibrary:
                 values = np.asarray(values, dtype=object)
             setattr(self, attr, values)
         self._search_cache: dict = {}
+        self._structure_ids: dict[int, tuple[str, str]] = {}
 
     # ------------------------------------------------------------------ basics
     def __len__(self) -> int:
@@ -137,6 +139,7 @@ class SpectralLibrary:
     def entry(self, index: int) -> LibraryEntry:
         """Return spectrum ``index`` and its metadata."""
         lo, hi = self.offsets[index], self.offsets[index + 1]
+        smiles, inchikey = self.structure_ids(index)
         return LibraryEntry(
             index=int(index),
             name=str(self.name_of(index)),
@@ -148,11 +151,33 @@ class SpectralLibrary:
             source=str(self.source[index]),
             mz=self.mz[lo:hi].astype(np.int64),
             intensity=self.intensity[lo:hi].astype(np.float64),
-            smiles=str(self.smiles[index]),
+            smiles=smiles,
             inchi=str(self.inchi[index]),
-            inchikey=str(self.inchikey[index]),
+            inchikey=inchikey,
             pubchem_cid=int(self.pubchem_cid[index]),
         )
+
+    def structure_ids(self, index: int) -> tuple[str, str]:
+        """
+        SMILES and InChIKey of spectrum ``index``.
+
+        Entries of NIST libraries carry the NIST drawing (``nist_structure``)
+        instead. It is converted with RDKit when first asked for (about 1 ms,
+        no stereo); without RDKit both stay empty.
+        """
+        index = int(index)
+        smiles, inchikey = str(self.smiles[index]), str(self.inchikey[index])
+        if smiles or not self.nist_structure[index]:
+            return smiles, inchikey
+        if index not in self._structure_ids:
+            from pyGCxGC.ms.nist import structure_identifiers
+
+            ids = structure_identifiers(self.nist_structure[index])
+            if ids is None:  # no RDKit
+                return smiles, inchikey
+            self._structure_ids[index] = ids
+        smiles, nist_key = self._structure_ids[index]
+        return smiles, inchikey or nist_key
 
     def name_of(self, index: int) -> str:
         """Compound name of spectrum ``index`` (stored as ``compound_name``)."""
@@ -228,7 +253,7 @@ class SpectralLibrary:
             CI/APCI/ESI/FI ionisation).
         """
         path = Path(path)
-        spectra, meta = [], {k: [] for k in META_FIELDS}
+        spectra, meta = [], {k: [] for k in META_FIELDS if k != "nist_structure"}
         for rec in iter_msp(path):
             if ei_only and not _is_ei_record(rec):
                 continue
