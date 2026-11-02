@@ -831,6 +831,8 @@ export interface components {
             signal?: ("tic" | "eic") | null;
             /** Summary */
             summary: string;
+            /** @description What the image values are (colour bar label) */
+            value_label?: components["schemas"]["ValueLabel"] | null;
             /**
              * View
              * @description View state stored by the frontend (e.g. from a project)
@@ -1703,6 +1705,21 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValueLabel */
+        ValueLabel: {
+            /**
+             * Quantity
+             * @description e.g. 'TIC' or 'Intensity, volume-normalised'
+             */
+            quantity: string;
+            /**
+             * Unit
+             * @description e.g. 'counts', 'a.u.' or 'pA'
+             */
+            unit?: string | null;
+        } & {
+            [key: string]: unknown;
         };
     };
     responses: never;

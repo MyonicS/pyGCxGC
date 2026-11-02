@@ -357,6 +357,7 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
             revision=result.revision,
             signal=result.signal,
             mz=result.mz,
+            value=result.value,
             pool=[fr, fc],
             region=[r0, r1, c0, c1],
             full_shape=[n_rows, n_cols],

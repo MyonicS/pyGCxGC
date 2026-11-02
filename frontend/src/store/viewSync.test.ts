@@ -22,6 +22,8 @@ describe('restoreDisplay', () => {
         maskOpacity: 0.6,
         showMasks: false,
         showPeaks: false,
+        colorbarLabel: 'FID signal (pA)',
+        showColorbarLabel: false,
       },
       settings,
     )
@@ -37,6 +39,8 @@ describe('restoreDisplay', () => {
       maskOpacity: 0.6,
       showMasks: false,
       showPeaks: false,
+      colorbarLabel: 'FID signal (pA)',
+      showColorbarLabel: false,
     })
   })
 

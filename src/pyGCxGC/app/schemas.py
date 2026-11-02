@@ -99,6 +99,11 @@ class GridInfo(Model):
     sampling_interval: float
 
 
+class ValueLabel(Info):
+    quantity: str = Field(description="e.g. 'TIC' or 'Intensity, volume-normalised'")
+    unit: str | None = Field(None, description="e.g. 'counts', 'a.u.' or 'pA'")
+
+
 class DocumentInfo(Info):
     id: str
     kind: Literal["fid", "ms"]
@@ -122,6 +127,9 @@ class DocumentInfo(Info):
     )
     view: dict[str, Any] | None = Field(
         None, description="View state stored by the frontend (e.g. from a project)"
+    )
+    value_label: ValueLabel | None = Field(
+        None, description="What the image values are (colour bar label)"
     )
 
 

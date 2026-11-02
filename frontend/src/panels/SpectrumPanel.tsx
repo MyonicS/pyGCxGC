@@ -111,6 +111,7 @@ function SpectrumView({ doc }: { doc: DocumentInfo }) {
               : null
           }
           relative={relative}
+          yLabel={relative ? 'relative (999)' : (doc.value_label?.unit ?? 'a.u.')}
           empty={
             sel
               ? spectrum

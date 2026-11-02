@@ -53,6 +53,7 @@ import {
   type Tool,
 } from '@/store/view'
 
+import { valueLabelText } from './ColorBar'
 import { ChromView } from './ChromView'
 import { DisplayPopover } from './DisplayPopover'
 import { exportChromatogram } from './figure'
@@ -123,7 +124,12 @@ export function ChromatogramPanel() {
           </TooltipContent>
         </Tooltip>
         <Separator orientation="vertical" className="mx-1 h-5!" />
-        <DisplayPopover docId={doc.id} display={display} image={image} />
+        <DisplayPopover
+          docId={doc.id}
+          display={display}
+          image={image}
+          autoLabel={valueLabelText(doc.value_label)}
+        />
         <FigureMenu docId={doc.id} disabled={!image} />
         <Separator orientation="vertical" className="mx-1 h-5!" />
         <OverlayToggle

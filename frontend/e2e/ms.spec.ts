@@ -184,7 +184,7 @@ test('EIC, peaks, assign and rename, export', async ({ page, request }) => {
   await eic.fill('91 92')
   await eic.press('Enter')
   await expect(
-    page.getByRole('region', { name: 'Chromatogram' }).getByText('EIC m/z 91, 92'),
+    page.getByRole('region', { name: 'Chromatogram' }).getByText('EIC m/z 91, 92', { exact: true }),
   ).toBeVisible()
   let doc = await api<{ signal: string; mz: number[] }>(request, 'GET', `/api/documents/${docId}`)
   expect(doc).toMatchObject({ signal: 'eic', mz: [91, 92] })

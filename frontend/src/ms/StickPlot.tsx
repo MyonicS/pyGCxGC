@@ -34,6 +34,8 @@ interface Props {
   /** Plotted downwards (head-to-tail); intensities are then always relative. */
   bottom?: Series | null
   relative?: boolean
+  /** Intensity label in the top-left corner (single spectra only). */
+  yLabel?: string
   maxLabels?: number
   empty?: React.ReactNode
   className?: string
@@ -56,6 +58,7 @@ export function StickPlot({
   top,
   bottom,
   relative = true,
+  yLabel,
   maxLabels = 10,
   empty,
   className,
@@ -205,6 +208,16 @@ export function StickPlot({
             >
               m/z
             </text>
+            {yLabel && !headToTail && (
+              <text
+                x={4}
+                y={10}
+                className="fill-plot-text text-[10px] italic"
+                data-testid="spectrum-y-label"
+              >
+                {yLabel}
+              </text>
+            )}
             {yTicks.map((t) => (
               <g key={`y${t.value}`} transform={`translate(0,${model.y(t.value)})`}>
                 <line x2={-4} className="stroke-plot-axis" />

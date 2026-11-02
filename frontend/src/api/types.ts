@@ -117,6 +117,8 @@ export interface ImageHeader {
   revision: number
   signal: 'tic' | 'eic'
   mz: number[]
+  /** What the values are (as `DocumentInfo.value_label`). */
+  value?: { quantity: string; unit: string | null }
   pool: [number, number]
   region: [number, number, number, number]
   full_shape: [number, number]

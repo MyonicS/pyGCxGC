@@ -1080,3 +1080,28 @@ def test_api_region_selection_and_reidentify(client, session, ms_files):
     assert wait_job(client, client.post(f"/api/documents/{doc_id}/peaks/reidentify"))[
         "n_peaks"
     ]
+
+
+def test_value_labels(session, client, ms_files):
+    cdf = ms_files[0]
+    fid = session.wait(session.open_document(FID_CSV, params={"modulation_time": 20}))
+    fid_id = fid["document_id"]
+    assert session.document(fid_id).info()["value_label"] == {
+        "quantity": "Intensity, volume-normalised",
+        "unit": None,
+    }
+    session.wait(session.update_document(fid_id, {"normalize": "none"}))
+    assert session.image(fid_id).value == {"quantity": "Signal", "unit": "a.u."}
+
+    ms_id = session.wait(session.open_document(cdf, params={"modulation_time": 4}))[
+        "document_id"
+    ]
+    assert session.image(ms_id).value == {"quantity": "TIC", "unit": "a.u."}
+    session.wait(session.set_signal(ms_id, "eic", [91, 92]))
+    info = client.get(f"/api/documents/{ms_id}").json()
+    assert info["value_label"] == {"quantity": "EIC m/z 91, 92", "unit": "a.u."}
+    r = client.get(f"/api/documents/{ms_id}/image")
+    from pyGCxGC.app.arrays import decode_array
+
+    header, _ = decode_array(r.content)
+    assert header["value"]["quantity"] == "EIC m/z 91, 92"

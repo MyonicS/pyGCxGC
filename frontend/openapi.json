@@ -215,6 +215,17 @@
             "title": "Summary",
             "type": "string"
           },
+          "value_label": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValueLabel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the image values are (colour bar label)"
+          },
           "view": {
             "anyOf": [
               {
@@ -2668,6 +2679,33 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValueLabel": {
+        "additionalProperties": true,
+        "properties": {
+          "quantity": {
+            "description": "e.g. 'TIC' or 'Intensity, volume-normalised'",
+            "title": "Quantity",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "e.g. 'counts', 'a.u.' or 'pA'",
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "quantity"
+        ],
+        "title": "ValueLabel",
         "type": "object"
       }
     }

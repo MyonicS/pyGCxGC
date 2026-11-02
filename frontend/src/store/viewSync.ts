@@ -41,6 +41,8 @@ export function restoreDisplay(saved: unknown, settings: Settings): Display {
   if (num(s.maskOpacity)) d.maskOpacity = Math.min(Math.max(s.maskOpacity, 0), 1)
   if (typeof s.showMasks === 'boolean') d.showMasks = s.showMasks
   if (typeof s.showPeaks === 'boolean') d.showPeaks = s.showPeaks
+  if (typeof s.colorbarLabel === 'string') d.colorbarLabel = s.colorbarLabel
+  if (typeof s.showColorbarLabel === 'boolean') d.showColorbarLabel = s.showColorbarLabel
   return d
 }
 

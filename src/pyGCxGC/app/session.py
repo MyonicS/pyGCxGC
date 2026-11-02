@@ -396,6 +396,7 @@ class ImageResult:
     mz: list[int]
     grid: Grid
     data: np.ndarray  # float32
+    value: dict = field(default_factory=dict)  # see Document.value_label
 
 
 @dataclass
@@ -503,6 +504,18 @@ class Document:
         """Image in the API layout (``float32``)."""
         raise NotImplementedError
 
+    def value_label(self, signal: str = "tic", mz=()) -> dict:
+        """
+        What the image values are, for the colour bar.
+
+        Returns
+        -------
+        dict
+            ``{"quantity": str, "unit": str | None}``, e.g.
+            ``{"quantity": "TIC", "unit": "counts"}``.
+        """
+        raise NotImplementedError
+
     def integration_signal(self):
         """Signal integrated by the masks, in the ``chrom_2D`` layout."""
         raise NotImplementedError
@@ -600,9 +613,19 @@ class FIDDocument(Document):
     def integration_signal(self):
         return self.chrom.chrom_2D
 
+    def value_label(self, signal: str = "tic", mz=()) -> dict:  # noqa: ARG002
+        normalize = self._params.normalize
+        if normalize == "volume":
+            return {"quantity": "Intensity, volume-normalised", "unit": None}
+        if normalize == "max":
+            return {"quantity": "Intensity, relative to maximum", "unit": None}
+        attrs = getattr(self.raw, "attrs", {}) if self.raw is not None else {}
+        return {"quantity": "Signal", "unit": attrs.get("unit") or "a.u."}
+
     def info(self) -> dict:
         info = super().info()
         info["sampling_inferred"] = self._params.sampling_interval is None
+        info["value_label"] = self.value_label()
         return info
 
     def summary(self) -> str:
@@ -724,8 +747,17 @@ class MSDocument(Document):
             n_scans=self.data.n_scans,
             baseline=self.data.baseline.describe(),
             has_peaks=self.peaks is not None,
+            value_label=self.value_label(self.signal, self.mz),
         )
         return info
+
+    def value_label(self, signal: str = "tic", mz=()) -> dict:
+        unit = self.data.raw.metadata.get("intensity_units") or "a.u."
+        mz = sorted({int(m) for m in mz})
+        if signal != "eic" or not mz:
+            return {"quantity": "TIC", "unit": unit}
+        shown = ", ".join(map(str, mz[:4])) + (", …" if len(mz) > 4 else "")
+        return {"quantity": f"EIC m/z {shown}", "unit": unit}
 
 
 # ------------------------------------------------------------------ libraries
@@ -1117,7 +1149,13 @@ class Session:
         if signal == "eic" and not mz:
             signal = "tic"
         return ImageResult(
-            doc.id, doc.revision, signal, sorted(set(mz)), doc.grid, data
+            doc.id,
+            doc.revision,
+            signal,
+            sorted(set(mz)),
+            doc.grid,
+            data,
+            doc.value_label(signal, mz),
         )
 
     def set_signal(self, document_id: str, signal: str = "tic", mz=()) -> Job:

@@ -1,4 +1,7 @@
-/** Colour bar with ticks in data units, spaced by the current scaling (spec VIEW-3). */
+/**
+ * Colour bar with ticks in data units, spaced by the current scaling (spec
+ * VIEW-3), and a rotated label with the quantity and unit on the right.
+ */
 
 import { memo, useMemo } from 'react'
 
@@ -7,6 +10,17 @@ import type { ScaleParams } from '@/lib/scaling'
 import { colorbarTicks } from '@/lib/ticks'
 
 const imageCache = new Map<string, string>()
+
+/** Room (px) right of the colour bar for the tick labels, before the label. */
+export const COLORBAR_TICK_ROOM = 60
+
+/** `"TIC (counts)"` from a document's value label. */
+export function valueLabelText(
+  value: { quantity: string; unit?: string | null } | null | undefined,
+) {
+  if (!value) return ''
+  return value.unit ? `${value.quantity} (${value.unit})` : value.quantity
+}
 
 /** A 1 × 256 PNG of a colour map, index 0 at the bottom. */
 export function colormapImage(name: ColormapName, reverse: boolean): string {
@@ -35,9 +49,11 @@ interface Props {
   colormap: ColormapName
   reverse: boolean
   scale: ScaleParams
+  /** Rotated label right of the ticks; nothing when empty. */
+  label?: string
 }
 
-function ColorBarImpl({ x, top, height, width, colormap, reverse, scale }: Props) {
+function ColorBarImpl({ x, top, height, width, colormap, reverse, scale, label }: Props) {
   const href = useMemo(() => colormapImage(colormap, reverse), [colormap, reverse])
   const ticks = colorbarTicks(scale, height)
   return (
@@ -74,6 +90,17 @@ function ColorBarImpl({ x, top, height, width, colormap, reverse, scale }: Props
           </g>
         )
       })}
+      {label && (
+        <text
+          transform={`translate(${x + width + COLORBAR_TICK_ROOM},${top + height / 2}) rotate(-90)`}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          className="fill-plot-text"
+          data-testid="colorbar-label"
+        >
+          {label}
+        </text>
+      )}
     </g>
   )
 }

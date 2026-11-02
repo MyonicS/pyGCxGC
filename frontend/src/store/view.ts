@@ -47,6 +47,9 @@ export interface Display {
   maskOpacity: number
   showMasks: boolean
   showPeaks: boolean
+  /** Colour bar label; `''` shows the document's value label (quantity and unit). */
+  colorbarLabel: string
+  showColorbarLabel: boolean
 }
 
 export interface Cursor {
@@ -112,6 +115,8 @@ export function defaultDisplay(settings: Settings): Display {
     maskOpacity: 0.35,
     showMasks: true,
     showPeaks: true,
+    colorbarLabel: '',
+    showColorbarLabel: true,
   }
 }
 

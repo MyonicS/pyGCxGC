@@ -41,7 +41,7 @@ import {
 } from '@/store/view'
 
 import { Axes, type PlotRect } from './Axes'
-import { ColorBar } from './ColorBar'
+import { ColorBar, valueLabelText } from './ColorBar'
 import { registerChromFigure } from './figure'
 import { autoVmax, scanAt, valueAt, visibleRegion } from './imageMath'
 import { Overlays, nearestPeak, type PeakMarker } from './Overlays'
@@ -62,6 +62,8 @@ import {
 import { useMaskOverlay } from './useMaskOverlay'
 
 const MARGIN = { left: 62, right: 90, top: 12, bottom: 44 }
+/** Extra right margin for the colour bar label. */
+const LABEL_MARGIN = 16
 const COLORBAR = { gap: 14, width: 14 }
 /** Smallest visible span, in pixels of the full-resolution grid. */
 const MIN_PIXELS = 1.5
@@ -132,6 +134,10 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   const subtractMode = useView((s) => s.subtract)
   const storedDomain = useView((s) => s.domains[docId])
   const shiftPreview = useView((s) => s.shiftPreview[docId])
+  const colorbarLabel = display.showColorbarLabel
+    ? display.colorbarLabel.trim() || valueLabelText(doc.value_label)
+    : ''
+  const marginRight = MARGIN.right + (colorbarLabel ? LABEL_MARGIN : 0)
   const selected = useView((s) => (s.selectedShape?.docId === docId ? s.selectedShape : null))
   const overlay = useMaskOverlay(docId, masks, doc.revision)
   const activeMaskId = useActiveMaskId(docId)
@@ -199,10 +205,10 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
     () => ({
       left: MARGIN.left,
       top: MARGIN.top,
-      width: Math.max(1, size.width - MARGIN.left - MARGIN.right),
+      width: Math.max(1, size.width - MARGIN.left - marginRight),
       height: Math.max(1, size.height - MARGIN.top - MARGIN.bottom),
     }),
-    [size],
+    [size, marginRight],
   )
   const transform = useMemo(
     () => (domain ? new ViewTransform(domain, plot.width, plot.height) : null),
@@ -785,6 +791,7 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
             colormap={display.colormap}
             reverse={display.reverse}
             scale={scale}
+            label={colorbarLabel}
           />
         </svg>
       )}

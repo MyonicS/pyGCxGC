@@ -41,10 +41,13 @@ export function DisplayPopover({
   docId,
   display,
   image,
+  autoLabel,
 }: {
   docId: string
   display: Display
   image: DocImage | undefined
+  /** The document's value label, shown when no label is typed. */
+  autoLabel: string
 }) {
   const lock = useView((s) => s.lock)
   const domain = useView((s) => s.domains[docId])
@@ -100,6 +103,24 @@ export function DisplayPopover({
                 onCheckedChange={(reverse) => updateDisplay(docId, { reverse })}
               />
             </label>
+          </Section>
+
+          <Section
+            title="Colour bar label"
+            action={
+              <Switch
+                checked={display.showColorbarLabel}
+                onCheckedChange={(showColorbarLabel) => updateDisplay(docId, { showColorbarLabel })}
+                aria-label="Show colour bar label"
+              />
+            }
+          >
+            <LabelField
+              value={display.colorbarLabel}
+              placeholder={autoLabel}
+              disabled={!display.showColorbarLabel}
+              onCommit={(colorbarLabel) => updateDisplay(docId, { colorbarLabel })}
+            />
           </Section>
 
           <Section title="Scaling">
@@ -205,6 +226,46 @@ export function DisplayPopover({
         </div>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** Free text committed on Enter or blur; empty means the automatic label. */
+function LabelField({
+  value,
+  placeholder,
+  disabled,
+  onCommit,
+}: {
+  value: string
+  placeholder: string
+  disabled: boolean
+  onCommit: (v: string) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const commit = () => {
+    if (draft === null) return
+    setDraft(null)
+    if (draft.trim() !== value) onCommit(draft.trim())
+  }
+  return (
+    <Input
+      value={draft ?? value}
+      placeholder={placeholder || 'Label'}
+      disabled={disabled}
+      aria-label="Colour bar label"
+      className="h-7 text-xs"
+      data-testid="colorbar-label-input"
+      onFocus={() => setDraft(value)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') {
+          e.stopPropagation()
+          setDraft(null)
+        }
+      }}
+    />
   )
 }
 
