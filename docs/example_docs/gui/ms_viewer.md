@@ -52,13 +52,15 @@ is given, it is estimated from the periodicity of the TIC.
 
 ## Supported data
 
-* ANDI-MS / AIA netCDF (`.cdf`). Export it from the instrument software, for
-  example GCMSsolution *File Conversion → AIA*. Truncated exports and files
-  with a missing record count are read as far as they are complete.
+* Vendor raw data read with [chromparser](https://github.com/MyonicS/chromparser):
+  Shimadzu GCMSsolution `.qgd`, Thermo `.raw` and ANDI-MS / AIA netCDF
+  (`.cdf`, e.g. from GCMSsolution *File Conversion → AIA*). Centroid masses
+  are rounded to nominal m/z; SIM/MRM runs are not supported. Incomplete
+  (truncated) ANDI exports are refused; export the run again.
 * OpenChrom CSV export (one column per m/z).
 * JCAMP-DX GC-MS exports (`.jdx`).
 
-Vendor binary files such as Shimadzu `.qgd` cannot be read directly.
+Other vendor binary files must be exported as ANDI/AIA netCDF first.
 
 ## Libraries
 

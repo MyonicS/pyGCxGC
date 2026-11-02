@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
+from pyGCxGC.vendor import read_signal, vendor_format
+
 
 def parse_csv(path) -> pd.DataFrame:  # from a CSV file
     """
@@ -31,6 +33,31 @@ def parse_csv(path) -> pd.DataFrame:  # from a CSV file
     return df
 
 
+def read_chromatogram(path, channel=None, injection=None) -> pd.DataFrame:
+    """
+    Reads a 1D chromatogram from an OpenChrom CSV or any vendor file that
+    chromparser reads (Shimadzu ``.gcd``, Agilent ``.ch``, Chromeleon, ANDI)
+
+    Parameters
+    ----------
+    path : str or Path
+        The path to the file.
+    channel : str, optional
+        Detector channel, for vendor files with several (see
+        :func:`pyGCxGC.vendor.read_signal`).
+    injection : int, optional
+        Injection index, for vendor files with several.
+
+    Returns
+    -------
+    pd.DataFrame
+        See :func:`parse_csv`.
+    """
+    if vendor_format(path) is not None:
+        return read_signal(path, channel=channel, injection=injection)
+    return parse_csv(path)
+
+
 def parse_2D_chromatogram(
     data: pd.DataFrame | str | Path,
     modulation_time: float,
@@ -47,7 +74,8 @@ def parse_2D_chromatogram(
     Parameters
     ----------
     data : pandas.DataFrame or str or Path
-        The input chromatogram data. Can be a pandas DataFrame or a file path to a CSV file.
+        The input chromatogram data. Can be a pandas DataFrame or a file path to an OpenChrom CSV
+        or a vendor file (see :func:`read_chromatogram`).
         If a DataFrame, it needs to contain the columns "Ret.Time[s]" and "Absolute Intensity".
     modulation_time : float
         The modulation time in seconds.
@@ -104,7 +132,7 @@ def parse_2D_chromatogram(
         else:
             raise TypeError(f"name must be a string, not {type(name)}")
     elif isinstance(data, (str, Path)):
-        chrom = parse_csv(data)
+        chrom = read_chromatogram(data)
         if name is None:
             name = Path(data).name
         elif type(name) is str:

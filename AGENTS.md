@@ -42,6 +42,7 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/gui/mask_creator.py` | Tk mask creator (`pygcxgc-maskcreator`) |
 | `src/pyGCxGC/masks.py` | `MaskSet`/`Mask`/`Grid`: masks as add/subtract shapes in RT units, rasteriser (pixel centres, even-odd), TIFF and `.gcxgc-masks.json` I/O, integration identical to `integrate_masks` |
 | `src/pyGCxGC/ms/io.py` | GC-MS readers -> `RawMSData` (dense scans x nominal m/z float32 matrix) |
+| `src/pyGCxGC/vendor.py` | Vendor raw files via the `chromparser` dependency: `vendor_kind` (FID or MS), `read_signal`/`from_signal` (`Signal` -> FID DataFrame, used by `parsing.read_chromatogram`). MS runs: `ms.io.read_raw_ms`/`from_msdata` |
 | `src/pyGCxGC/ms/data.py` | `GCxGC_MS`: folding, spectra, EIC, apex search, modulation estimate |
 | `src/pyGCxGC/ms/baseline.py` | Baseline models: `none`, `modulation_percentile` (default), `rolling_percentile`, spectra-only `local` and `reference` |
 | `src/pyGCxGC/ms/library.py` | `SpectralLibrary` (CSR-like peaks + metadata), MSP I/O, `.npz` cache, `load_library`, MoNA download |
@@ -56,6 +57,7 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/app/viewer.py` | `gcgc.view` for notebooks: `Viewer` (live state, `select`, `set_signal`, `on`) and `LiveMasks` |
 | `src/pyGCxGC/app/paths.py` | Config/cache/log folders (platformdirs), `ms_viewer.json` migration, rotating log file (core dependencies only) |
 | `tests/test_ms.py` | Synthetic-data tests for everything in `ms/` (no local data needed) |
+| `tests/test_vendor.py` | chromparser adapters on synthetic `MSData`/`Signal`, ANDI and HDF5 files, plus the Shimadzu files in `local_data/Data/` when present |
 | `tests/test_masks.py`, `tests/test_app.py` | `MaskSet`; `Session` and the API (FastAPI `TestClient`) |
 | `tests/test_notebook.py` | Milestone 4: projects, settings migration and logs, active document, view state, the viewer (real server thread) and `pygcxgc --headless` |
 | `tests/test_structures.py` | Structure resolver and cache with a stubbed PubChem (`pubchem()` is reused by `test_app.py` and `e2e/backend.py`) |
@@ -97,8 +99,7 @@ files you change, and do not reformat untouched legacy code.
 
 * Local data lives in `local_data/` (git-ignored, as are `*.zip`, `*.cdf`,
   `*.qgd`): `local_data/gcxgc-ms_data/` (Shimadzu GCMS-QP runs, 10 Hz,
-  m/z 45-500, 20 s modulation; `SR_2DGC_001_PY_007.CDF` is a truncated
-  export) and `local_data/MSSEARCH/` (a licensed **NIST 20** library).
+  m/z 45-500, 20 s modulation) and `local_data/MSSEARCH/` (a licensed **NIST 20** library).
 * Never commit, upload or paste the NIST library, its converted cache
   (`~/.cache/pyGCxGC/library_*.npz`) or spectra extracted from it. Tests that
   need it must `skipif` when it is absent.
@@ -126,6 +127,17 @@ files you change, and do not reformat untouched legacy code.
   `U<NIST number>` or `R<id>` (no spectrum). Phase types come in 15 spellings
   (normalised), n-alkanes are stored once with phase type "All column types",
   and `Lee RI` values are on the PAH scale, so never mix them with alkane RIs.
+* **Vendor files** (ANDI `.cdf`, Shimadzu `.qgd`/`.gcd`, Agilent,
+  Chromeleon, Thermo) are read by `chromparser` (separate package, same
+  author); fix or extend format support there, not here. pyGCxGC only adapts
+  its model: `MSData` centroids are rounded to nominal m/z (`np.rint`, as
+  before) and summed per scan; retention times come in minutes and are
+  rounded to µs after conversion to seconds. `read_ms_file` and
+  `read_chromatogram` try chromparser first (content sniffing) and fall back
+  to the in-repo OpenChrom CSV/JCAMP-DX readers, which chromparser does not
+  cover. chromparser refuses truncated ANDI exports (`CorruptFile`) instead
+  of recovering the complete scans. Never read chromConverter's source
+  (GPL-3.0).
 * **Search mass range** must be the acquisition range (e.g. 45-500).
   Otherwise library peaks at m/z < 45 penalise every match.
   `SpectralLibrary.search_matrix` caches the sparse matrices per
@@ -139,7 +151,7 @@ files you change, and do not reformat untouched legacy code.
   zeroed. Scan 0 of Shimadzu runs is an injection artefact, so peak detection
   skips the first modulation.
 * `estimate_modulation_time` uses the TIC autocorrelation, refined with
-  harmonics. It must return 20.0 s for the PY_010 and PY_007 runs.
+  harmonics. It must return 20.0 s for the PY_010 run.
 * **Exact integration.** `MaskSet.integrate` multiplies the `chrom_2D`
   *DataFrame*, as `integrate_masks` does. Multiplying a NumPy copy changes the
   memory order, hence the summation order, and the last digit.

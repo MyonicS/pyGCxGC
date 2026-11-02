@@ -741,9 +741,13 @@ def test_api_jobs_and_errors(client, tmp_path):
     assert r.json()["type"] == "NotFound"
     vendor = tmp_path / "run.cdf"
     vendor.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 100)
-    job = finish_job(client, client.post("/api/documents", json={"path": str(vendor)}))
+    r = client.post("/api/documents", json={"path": str(vendor)})
+    assert r.status_code == 400
+    assert "andi-ms or andi-chrom" in r.json()["detail"]
+    broken = tmp_path / "broken.csv"
+    broken.write_text("RT(milliseconds),RT(minutes),RI,45\nnot,a,number,x\n")
+    job = finish_job(client, client.post("/api/documents", json={"path": str(broken)}))
     assert job["status"] == "failed"
-    assert "ANDI" in job["error"]
     assert "Traceback" in job["traceback"]
     r = client.post("/api/documents", json={"path": str(tmp_path / "missing.cdf")})
     assert r.status_code == 400
@@ -829,7 +833,7 @@ def test_api_probe_file(client, ms_files, tmp_path):
     (tmp_path / "x.bin").write_bytes(b"\0" * 10)
     probe = client.get("/api/fs/probe", params={"path": str(tmp_path / "x.bin")})
     assert probe.json()["kind"] is None
-    assert "Unsupported" in probe.json()["error"]
+    assert "chromparser can read" in probe.json()["error"]
     probe = client.get("/api/fs/probe", params={"path": str(tmp_path / "missing")})
     assert "not found" in probe.json()["error"]
 

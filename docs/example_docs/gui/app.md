@@ -42,7 +42,8 @@ the app. Add `--legacy` to run the old Tk tools while they still exist.
 ## Opening files and the workspace
 
 *Open* (or `Ctrl+O`) shows a file browser for OpenChrom CSV (FID or MS),
-ANDI-MS `.cdf` and JCAMP-DX files and for projects (`.gcxgc`). For FID files
+JCAMP-DX files, vendor raw files read with chromparser (Shimadzu `.gcd` and
+`.qgd`, ANDI `.cdf`, Agilent `.ch`, Chromeleon `.cmbx`, Thermo `.raw`) and for projects (`.gcxgc`). For FID files
 it asks for the modulation time and can remember it for the next files.
 Several files can be open at once; they appear as tabs in the top bar.
 

@@ -18,7 +18,8 @@ from . import processing
 # Explicitly import the commonly used functions from each module
 from .parsing import (
     parse_2D_chromatogram,
-    parse_csv
+    parse_csv,
+    read_chromatogram
 )
 
 from .main import (
@@ -91,6 +92,7 @@ __all__ = [
     # Parsing functions
     "parse_2D_chromatogram",
     "parse_csv",
+    "read_chromatogram",
     # Main functions
     "split_solvent",
     "add_split",

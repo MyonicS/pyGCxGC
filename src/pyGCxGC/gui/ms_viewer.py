@@ -349,6 +349,8 @@ class MSViewer:
             title="Open GCxGC-MS data",
             filetypes=[
                 ("ANDI/AIA netCDF", "*.cdf *.CDF"),
+                ("Shimadzu GCMSsolution", "*.qgd *.QGD"),
+                ("Thermo raw", "*.raw *.RAW"),
                 ("OpenChrom CSV", "*.csv"),
                 ("JCAMP-DX", "*.jdx *.JDX"),
                 ("All files", "*"),

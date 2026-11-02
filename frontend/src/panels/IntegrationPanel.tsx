@@ -68,8 +68,8 @@ const columns: ColDef<Row>[] = [
 ]
 
 const EXTENSIONS = {
-  fid: ['.csv', '.txt'],
-  ms: ['.cdf', '.csv', '.txt', '.jdx', '.dx', '.jcamp'],
+  fid: ['.csv', '.txt', '.gcd'],
+  ms: ['.cdf', '.csv', '.txt', '.jdx', '.dx', '.jcamp', '.qgd', '.raw'],
 }
 
 /**

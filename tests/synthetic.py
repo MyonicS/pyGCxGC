@@ -92,6 +92,7 @@ def write_andi(raw: RawMSData, path: str | Path) -> Path:
     path = Path(path)
     scans, n_mz = raw.intensities.shape
     with netcdf_file(path, "w") as f:
+        f.experiment_type = "Centroided Mass Spectrum"
         f.createDimension("scan_number", scans)
         f.createDimension("point_number", scans * n_mz)
         t = f.createVariable("scan_acquisition_time", "d", ("scan_number",))

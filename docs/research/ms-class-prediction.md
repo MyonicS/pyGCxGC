@@ -421,7 +421,7 @@ isomers, but position in the 2D plane can separate classes.
    section G. Not yet joined to library entries.
 1. Write the label spec and the evaluation protocol (section I.1-I.2).
 2. Check licences: SpecTUS Hugging Face data, NEIMS/RASSP, MoNA subsets.
-3. Prototype Option 4 (features + RF) on the local PY_007/PY_010 runs using
+3. Prototype Option 4 (features + RF) on the local PY_010 run using
    library hits as labels, as the baseline.
 4. Prototype Option 1 and compare on a structure-split test set.
 5. Run the targeted GCxGC + ML literature search.

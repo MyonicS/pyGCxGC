@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from .baseline import BASELINES, BaselineModel, make_baseline
 from .data import GCxGC_MS, Spectrum, estimate_modulation_time, read_gcxgc_ms
-from .io import RawMSData, read_andi, read_jcamp, read_ms_file, read_openchrom_csv
+from .io import (
+    RawMSData,
+    from_msdata,
+    read_andi,
+    read_jcamp,
+    read_ms_file,
+    read_openchrom_csv,
+    read_raw_ms,
+)
 from .library import SpectralLibrary, download_mona_gcms, load_library
 from .search import (
     Hit,
@@ -26,6 +34,7 @@ __all__ = [
     "composite_scores",
     "download_mona_gcms",
     "estimate_modulation_time",
+    "from_msdata",
     "load_library",
     "make_baseline",
     "read_andi",
@@ -33,6 +42,7 @@ __all__ = [
     "read_jcamp",
     "read_ms_file",
     "read_openchrom_csv",
+    "read_raw_ms",
     "search_spectra",
     "search_spectrum",
 ]

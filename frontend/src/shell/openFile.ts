@@ -64,7 +64,21 @@ export function rememberModulationTime(seconds: number) {
   if (current !== seconds) void updateSettings({ fid: { modulation_time: seconds } })
 }
 
-export const SUPPORTED_EXTENSIONS = ['.csv', '.txt', '.cdf', '.jdx', '.dx', '.jcamp', '.gcxgc']
+export const SUPPORTED_EXTENSIONS = [
+  '.csv',
+  '.txt',
+  '.cdf',
+  '.jdx',
+  '.dx',
+  '.jcamp',
+  '.gcd',
+  '.qgd',
+  '.ch',
+  '.cmbx',
+  '.raw',
+  '.h5',
+  '.gcxgc',
+]
 
 export function isSupported(name: string): boolean {
   const lower = name.toLowerCase()

@@ -3,10 +3,10 @@ Readers for GC-MS raw data.
 
 Supported formats
 -----------------
-* ANDI-MS / AIA netCDF (``.cdf``), the vendor neutral export of practically
-  every GC-MS software (e.g. Shimadzu GCMSsolution "File Conversion" -> AIA).
-  Files with an unset record count (written by some converters) or that are
-  truncated are recovered as far as possible.
+* Everything :mod:`chromparser` reads: ANDI-MS / AIA netCDF (``.cdf``), the
+  vendor neutral export of practically every GC-MS software, Shimadzu
+  GCMSsolution ``.qgd``, Thermo ``.raw`` (also inside Chromeleon ``.cmbx``)
+  and chromparser HDF5 files.
 * OpenChrom "CSV" export (one row per scan, one column per nominal m/z).
 * JCAMP-DX GC-MS exports (``##RETENTION_TIME`` / ``##XYDATA`` blocks).
 
@@ -17,14 +17,10 @@ intensity matrix on a nominal (integer) m/z axis.
 from __future__ import annotations
 
 import re
-import struct
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-
-OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 
 @dataclass
@@ -41,7 +37,8 @@ class RawMSData:
     intensities : np.ndarray
         ``float32`` array of shape ``(n_scans, n_mz)``.
     metadata : dict
-        Global attributes of the file.
+        Global attributes of the file. ``"intensity_units"`` is the short
+        intensity unit (``"counts"``, ``"a.u."``, ...).
     """
 
     scan_times: np.ndarray
@@ -62,19 +59,14 @@ def read_ms_file(path: str | Path) -> RawMSData:
     Parameters
     ----------
     path : str or Path
-        ANDI/AIA netCDF (``.cdf``), OpenChrom ``.csv`` or JCAMP-DX (``.jdx``).
+        A file :func:`read_raw_ms` reads (ANDI/AIA ``.cdf``, Shimadzu
+        ``.qgd``, ...), an OpenChrom ``.csv`` or a JCAMP-DX (``.jdx``) file.
     """
+    from pyGCxGC.vendor import vendor_format
+
     path = Path(path)
-    with path.open("rb") as fh:
-        magic = fh.read(8)
-    if magic[:3] == b"CDF":
-        return read_andi(path)
-    if magic == OLE_MAGIC:
-        raise ValueError(
-            f"{path.name} is a vendor binary file (OLE compound document, e.g. a "
-            "Shimadzu .qgd renamed). Export it as ANDI/AIA netCDF (*.cdf) from "
-            "the instrument software or OpenChrom first."
-        )
+    if vendor_format(path) is not None:
+        return read_raw_ms(path)
     suffix = path.suffix.lower()
     if suffix in (".jdx", ".dx", ".jcamp"):
         return read_jcamp(path)
@@ -83,7 +75,62 @@ def read_ms_file(path: str | Path) -> RawMSData:
     raise ValueError(f"Unsupported GC-MS file format: {path}")
 
 
-# ---------------------------------------------------------------- ANDI-MS
+#: Short forms of intensity units (ANDI ``intensity_values:units`` spellings).
+INTENSITY_UNITS = {
+    "total counts": "counts",
+    "counts": "counts",
+    "arbitrary intensity units": "a.u.",
+    "arbitrary units": "a.u.",
+}
+#: Unit of files that do not state one.
+DEFAULT_INTENSITY_UNIT = "a.u."
+
+
+def intensity_unit(unit: str | None) -> str:
+    """Short form of an intensity unit; ``"a.u."`` when it is unknown."""
+    if not unit or not str(unit).strip():
+        return DEFAULT_INTENSITY_UNIT
+    return INTENSITY_UNITS.get(str(unit).strip().lower(), str(unit).strip())
+
+
+# ---------------------------------------------------------------- vendor files
+def read_raw_ms(path: str | Path, injection: int | None = None) -> RawMSData:
+    """
+    Read GC-MS data with :mod:`chromparser`.
+
+    Parameters
+    ----------
+    path : str or Path
+        Any GC-MS file chromparser reads: ANDI-MS netCDF (``.cdf``), Shimadzu
+        GCMSsolution ``.qgd``, Thermo ``.raw``, Chromeleon ``.cmbx`` with MS
+        data or a chromparser HDF5 file.
+    injection : int, optional
+        Index of the injection among those with MS data, for files that hold
+        several. Required when there is more than one.
+
+    Returns
+    -------
+    RawMSData
+        Centroids rounded to the nearest integer m/z and summed per scan.
+    """
+    import chromparser
+
+    path = Path(path)
+    runs = [
+        (inj, ms) for inj in chromparser.read(path, ms=True) for ms in inj.ms.values()
+    ]
+    if not runs:
+        raise ValueError(f"{path.name} contains no GC-MS data")
+    if injection is None:
+        if len(runs) > 1:
+            raise ValueError(
+                f"{path.name} holds {len(runs)} GC-MS runs; choose one with injection="
+            )
+        injection = 0
+    inj, ms = runs[injection]
+    return from_msdata(ms, {**inj.metadata, **ms.metadata})
+
+
 def read_andi(path: str | Path) -> RawMSData:
     """
     Read an ANDI-MS (AIA, netCDF classic) file.
@@ -97,147 +144,39 @@ def read_andi(path: str | Path) -> RawMSData:
     -------
     RawMSData
     """
-    from scipy.io import netcdf_file
+    return read_raw_ms(path)
 
-    path = Path(path)
-    with netcdf_file(path, "r", mmap=False) as f:
-        attrs = {k: _decode_attr(v) for k, v in f._attributes.items()}
-        var = f.variables
-        scan_times = np.array(var["scan_acquisition_time"][:], dtype=np.float64)
-        scan_index = np.array(var["scan_index"][:], dtype=np.int64)
-        point_count = np.array(var["point_count"][:], dtype=np.int64)
-        masses = np.array(var["mass_values"][:], dtype=np.float64)
-        intens = np.array(var["intensity_values"][:], dtype=np.float64)
-        units = _decode_attr(var["scan_acquisition_time"]._attributes.get("units", b""))
 
-    if len(masses) == 0 and point_count.max(initial=0) > 0:
-        # record count not set in the header (streaming writers / truncated)
-        masses, intens = _read_andi_records(path)
-        warnings.warn(
-            f"{path.name}: netCDF record count missing; recovered "
-            f"{len(masses)} data points from the file body.",
-            stacklevel=2,
-        )
+def from_msdata(ms, metadata: dict | None = None) -> RawMSData:
+    """
+    Convert a :class:`chromparser.MSData` to a :class:`RawMSData`.
 
-    valid = (
-        np.isfinite(scan_times)
-        & (np.abs(scan_times) < 1e30)
-        & (point_count >= 0)
-        & (scan_index >= 0)
-        & (scan_index + point_count <= len(masses))
-    )
-    if not valid.all():
-        last = np.flatnonzero(~valid)[0]
-        warnings.warn(
-            f"{path.name}: only the first {last} of {len(valid)} scans are complete; "
-            "the file appears to be truncated.",
-            stacklevel=2,
-        )
-        scan_times, scan_index, point_count = (
-            scan_times[:last],
-            scan_index[:last],
-            point_count[:last],
-        )
-    if "min" in str(units).lower():
-        scan_times = scan_times * 60.0
-
-    n_points = int(scan_index[-1] + point_count[-1]) if len(scan_index) else 0
-    masses, intens = masses[:n_points], intens[:n_points]
-    scan_of_point = np.repeat(np.arange(len(point_count)), point_count)
-    starts = np.repeat(scan_index, point_count)
-    # scan_index may not be contiguous; index the points explicitly
-    offsets = np.arange(n_points) - np.repeat(
-        np.concatenate([[0], np.cumsum(point_count)[:-1]]), point_count
-    )
-    point_idx = starts + offsets
-    mz_all = masses[point_idx]
-    int_all = intens[point_idx]
+    Parameters
+    ----------
+    ms : chromparser.MSData
+        Centroided MS run.
+    metadata : dict, optional
+        Stored in the result (default: ``ms.metadata``).
+        ``"intensity_units"`` is set from ``ms.metadata["intensity_unit"]``
+        (see :func:`intensity_unit`).
+    """
+    if ms.spectrum_type != "centroid":
+        raise ValueError(f"{ms.name}: profile spectra are not supported")
+    n_scans = len(ms)
+    scan = np.repeat(np.arange(n_scans), np.diff(ms.peak_offset))
+    # retention times are minutes; round off the conversion error (µs)
+    seconds = np.round(ms.retention_time * 60.0, 6)
     return _to_matrix(
-        scan_times, scan_of_point, mz_all, int_all, len(point_count), attrs
+        seconds,
+        scan,
+        ms.mz,
+        ms.intensity,
+        n_scans,
+        {
+            **(ms.metadata if metadata is None else metadata),
+            "intensity_units": intensity_unit(ms.metadata.get("intensity_unit")),
+        },
     )
-
-
-def _read_andi_records(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """Read ``mass_values``/``intensity_values`` when numrecs is 0."""
-    header = _parse_netcdf_header(path)
-    rec_layout = sorted(
-        ((n, h) for n, h in header.items() if h["isrec"]), key=lambda x: x[1]["begin"]
-    )
-    recsize = sum(h["vsize"] for _, h in rec_layout)
-    start = rec_layout[0][1]["begin"]
-    nrec = (path.stat().st_size - start) // recsize
-    dtype = np.dtype(
-        [(n, h["dtype"], (h["vsize"] // h["dtype"].itemsize,)) for n, h in rec_layout]
-    )
-    data = np.fromfile(path, dtype=dtype, count=nrec, offset=start)
-    masses = data["mass_values"].reshape(-1).astype(np.float64)
-    intens = data["intensity_values"].reshape(-1).astype(np.float64)
-    return masses, intens
-
-
-_NC_TYPES = {1: "i1", 2: "S1", 3: ">i2", 4: ">i4", 5: ">f4", 6: ">f8"}
-
-
-def _parse_netcdf_header(path: Path) -> dict:
-    """Minimal netCDF classic header parser (variable offsets and sizes)."""
-    with path.open("rb") as fh:
-        buf = fh.read(1 << 20)
-    if buf[:3] != b"CDF":
-        raise ValueError("not a netCDF classic file")
-    offset_size = 8 if buf[3] == 2 else 4
-    pos = 8
-
-    def u32():
-        nonlocal pos
-        v = struct.unpack_from(">I", buf, pos)[0]
-        pos += 4
-        return v
-
-    def name():
-        nonlocal pos
-        n = u32()
-        s = buf[pos : pos + n].decode("latin-1")
-        pos += (n + 3) & ~3
-        return s
-
-    def skip_attrs():
-        nonlocal pos
-        tag, n = u32(), u32()
-        for _ in range(n if tag else 0):
-            name()
-            typ, nelems = u32(), u32()
-            size = np.dtype(_NC_TYPES[typ]).itemsize * nelems
-            pos += (size + 3) & ~3
-
-    tag, ndims = u32(), u32()
-    dims = [(name(), u32()) for _ in range(ndims if tag else 0)]
-    skip_attrs()
-    tag, nvars = u32(), u32()
-    out = {}
-    for _ in range(nvars if tag else 0):
-        vname = name()
-        nd = u32()
-        dimids = [u32() for _ in range(nd)]
-        skip_attrs()
-        typ, vsize = u32(), u32()
-        begin = struct.unpack_from(">Q" if offset_size == 8 else ">I", buf, pos)[0]
-        pos += offset_size
-        isrec = bool(dimids) and dims[dimids[0]][1] == 0
-        out[vname] = {
-            "dtype": np.dtype(_NC_TYPES[typ]),
-            "vsize": vsize,
-            "begin": begin,
-            "isrec": isrec,
-        }
-    return out
-
-
-def _decode_attr(value):
-    if isinstance(value, bytes):
-        return value.decode("latin-1").rstrip("\0").strip()
-    if isinstance(value, np.ndarray) and value.size == 1:
-        return value.item()
-    return value
 
 
 # ---------------------------------------------------------------- OpenChrom CSV
@@ -343,6 +282,7 @@ def _to_matrix(
     lo, hi = int(nominal.min()), int(nominal.max())
     matrix = np.zeros((n_scans, hi - lo + 1), dtype=np.float32)
     np.add.at(matrix, (scan_of_point, nominal - lo), intensity)
+    metadata = {"intensity_units": DEFAULT_INTENSITY_UNIT, **metadata}
     return RawMSData(
         scan_times=np.asarray(scan_times, dtype=np.float64)[:n_scans],
         mz=np.arange(lo, hi + 1),

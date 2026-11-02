@@ -74,7 +74,7 @@ from pyGCxGC.masks import (
 )
 from pyGCxGC.ms.baseline import make_baseline
 from pyGCxGC.ms.data import GCxGC_MS, Spectrum, estimate_modulation_time
-from pyGCxGC.ms.io import OLE_MAGIC, read_ms_file
+from pyGCxGC.ms.io import read_ms_file
 from pyGCxGC.ms.library import (
     SpectralLibrary,
     default_cache_dir,
@@ -92,8 +92,9 @@ from pyGCxGC.ms.structures import (
     rdkit_available,
     resolve,
 )
-from pyGCxGC.parsing import parse_2D_chromatogram, parse_csv
+from pyGCxGC.parsing import parse_2D_chromatogram, read_chromatogram
 from pyGCxGC.processing import integrate_2D
+from pyGCxGC.vendor import vendor_kind
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -528,7 +529,7 @@ class Document:
 
 
 class FIDDocument(Document):
-    """GCxGC-FID chromatogram (OpenChrom CSV)."""
+    """GCxGC-FID chromatogram (OpenChrom CSV or a vendor file, via chromparser)."""
 
     kind = "fid"
 
@@ -543,7 +544,7 @@ class FIDDocument(Document):
 
     @classmethod
     def open(cls, path: Path, params: FIDParams) -> FIDDocument:
-        raw = parse_csv(path)
+        raw = read_chromatogram(path)
         chrom = cls.process(raw, params, path.name)
         return cls(chrom, params, raw, str(path))
 
@@ -994,7 +995,9 @@ class Session:
         Parameters
         ----------
         path : str or Path
-            OpenChrom CSV (FID or MS), ANDI-MS ``.cdf`` or JCAMP-DX file.
+            OpenChrom CSV (FID or MS), JCAMP-DX or any file chromparser
+            reads (ANDI ``.cdf``, Shimadzu ``.gcd``/``.qgd``, Agilent,
+            Chromeleon, Thermo).
         kind : {"fid", "ms"}, optional
             Detected from the file when omitted.
         params : dict, optional
@@ -2921,19 +2924,14 @@ def detect_kind(path: str | Path) -> str:
     path = Path(path)
     if is_project_file(path):
         raise InvalidRequest(f"{path.name} is a pyGCxGC project: open it as a project")
+    try:
+        kind = vendor_kind(path)  # files chromparser reads
+    except ValueError as exc:
+        raise InvalidRequest(str(exc)) from exc
+    if kind is not None:
+        return kind
     with path.open("rb") as fh:
         head = fh.read(65536)
-    if head[:3] == b"CDF":
-        if b"mass_values" in head:
-            return "ms"
-        if b"ordinate_values" in head:
-            raise InvalidRequest(
-                f"{path.name} is an ANDI chromatography (FID) file, which is not "
-                "supported yet. Export it as OpenChrom CSV."
-            )
-        return "ms"
-    if head[:8] == OLE_MAGIC:
-        return "ms"  # the reader explains how to export vendor files
     suffix = path.suffix.lower()
     if suffix in (".jdx", ".dx", ".jcamp"):
         return "ms"
@@ -2944,6 +2942,12 @@ def detect_kind(path: str | Path) -> str:
                 float(col.strip().strip('"'))
                 return "ms"  # numeric column names are m/z values
         return "fid"
+    import chromparser
+
+    try:
+        chromparser.sniff(path)  # raises with the reason
+    except ValueError as exc:
+        raise InvalidRequest(str(exc)) from exc
     raise InvalidRequest(f"Unsupported file type: {path.name}")
 
 

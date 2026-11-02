@@ -17,7 +17,8 @@ It supports 2D chromatograms from single-channel detectors such as FID, and GCxG
 - Generate 2D Chromatograms
 - Integrate areas in 2D Chromatograms using .tif masks
 - GUI for generation of masks
-- GCxGC-MS: read ANDI/AIA netCDF, OpenChrom CSV and JCAMP-DX data, extract background-corrected spectra, view extracted ion chromatograms
+- Read vendor raw files directly with [chromparser](https://github.com/MyonicS/chromparser): Shimadzu GCMSsolution (`.gcd`, `.qgd`), Agilent, Chromeleon, Thermo and ANDI netCDF
+- GCxGC-MS: read Shimadzu `.qgd`, ANDI/AIA netCDF, OpenChrom CSV and JCAMP-DX data, extract background-corrected spectra, view extracted ion chromatograms
 - Spectral library search (NIST-style match / reverse match factors) against your own NIST MS Search library (read directly, no Windows needed) or open MSP libraries such as MoNA
 - 2D peak detection with automatic identification and CSV export
 - GCxGC-MS viewer GUI: chromatogram, spectrum at the selected point and best library match

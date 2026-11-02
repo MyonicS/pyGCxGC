@@ -29,7 +29,8 @@ dependencies = [
     "pandas",
     "matplotlib>=3.7.0",
     "scipy",
-    "tifffile"
+    "tifffile",
+    "chromparser>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -151,7 +152,6 @@ lint.ignore = [
   "PERF203",  # try-except-in-loop
   "RET505", # Unnecessary `elif` after `return`
 ]
-src = ["src"]
 lint.unfixable = [
   "T20",  # Removes print statements
   "F841", # Removes unused variables
@@ -160,6 +160,7 @@ lint.pydocstyle.convention = "numpy"
 lint.isort.known-first-party = ["pyGCxGC"]
 lint.isort.required-imports = ["from __future__ import annotations"]
 lint.isort.split-on-trailing-comma=false
+src = ["src"]
 extend-include = ["*.ipynb"]
 
 [tool.ruff.format]
