@@ -164,7 +164,6 @@ test('compact layout for the notebook view', async ({ page, request }) => {
     has: page.locator('.dv-tab', { hasText: 'Spectrum' }),
   })
   await expect(spectrumGroup.locator('.dv-tab', { hasText: 'Match' })).toHaveCount(1)
-  await expect(page.getByLabel('pyGCxGC Studio')).not.toContainText('Studio')
   // the compact layout is saved apart from the normal one
   await page.locator('.dv-tab', { hasText: 'Peaks' }).click()
   await page.waitForTimeout(1200)

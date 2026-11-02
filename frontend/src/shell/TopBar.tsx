@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
+import { AppLogo } from '@/components/AppLogo'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -54,7 +55,7 @@ import { openPath, showOpenDialog } from './openFile'
 import { closeProject, isProjectPath, saveProject } from './project'
 import { openSettings } from './SettingsDialog'
 import { setTheme, useThemeSetting } from './theme'
-import { COMPACT, PANELS, resetLayout, showPanel, type PanelId } from './Workspace'
+import { PANELS, resetLayout, showPanel, type PanelId } from './Workspace'
 
 const NO_FILES: string[] = []
 
@@ -64,10 +65,9 @@ export const mod =
 export function TopBar() {
   return (
     <header className="flex h-10 shrink-0 items-center gap-1 border-b bg-chrome px-2">
-      <div className="flex items-center gap-1.5 pr-2 pl-1 select-none" aria-label="pyGCxGC Studio">
-        <Logo />
-        <span className="text-sm font-semibold tracking-tight">pyGCxGC</span>
-        {!COMPACT && <span className="text-sm text-muted-foreground">Studio</span>}
+      <div className="flex items-center gap-1.5 pr-2 pl-1 select-none" aria-label="GC²">
+        <AppLogo className="size-5" />
+        <span className="text-sm font-semibold tracking-tight">GC²</span>
       </div>
       <ProjectName />
       <OpenMenu />
@@ -78,16 +78,6 @@ export function TopBar() {
         <AppMenu />
       </div>
     </header>
-  )
-}
-
-function Logo() {
-  return (
-    <svg viewBox="0 0 16 16" className="size-4 text-primary" aria-hidden>
-      <rect x="1" y="1" width="14" height="14" rx="3" className="fill-current opacity-20" />
-      <ellipse cx="6" cy="9.5" rx="2.2" ry="1.4" className="fill-current" />
-      <ellipse cx="10.5" cy="6" rx="1.6" ry="1.1" className="fill-current opacity-70" />
-    </svg>
   )
 }
 

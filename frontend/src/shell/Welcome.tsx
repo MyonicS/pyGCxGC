@@ -3,6 +3,7 @@
 import { Clock, FileText, FolderOpen, Upload } from 'lucide-react'
 import { useState } from 'react'
 
+import { AppLogo } from '@/components/AppLogo'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/Kbd'
 import { basename, cn, dirname } from '@/lib/utils'
@@ -40,12 +41,15 @@ export function Welcome() {
           over && 'border-primary bg-primary/5',
         )}
       >
-        <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight">pyGCxGC Studio</h1>
-          <p className="text-sm text-muted-foreground">
-            GCxGC-FID mask integration and GCxGC-MS inspection. Open an OpenChrom CSV, ANDI-MS .cdf
-            or JCAMP-DX file, or a .gcxgc project.
-          </p>
+        <div className="flex items-center gap-4">
+          <AppLogo className="size-14" />
+          <div className="flex flex-col gap-1">
+            <h1 className="text-xl font-semibold tracking-tight">GC²</h1>
+            <p className="text-sm text-muted-foreground">
+              GCxGC-FID mask integration and GCxGC-MS inspection. Open an OpenChrom CSV, ANDI-MS
+              .cdf or JCAMP-DX file, or a .gcxgc project.
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={() => showOpenDialog()} data-testid="welcome-open">
@@ -89,7 +93,7 @@ export function Welcome() {
           <Upload className="size-4" />
           Drop a file here (desktop app)
         </div>
-        {version && <p className="text-[11px] text-muted-foreground">pyGCxGC {version}</p>}
+        {version && <p className="text-[11px] text-muted-foreground">GC² · pyGCxGC {version}</p>}
       </div>
     </div>
   )

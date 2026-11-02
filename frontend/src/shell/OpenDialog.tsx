@@ -105,7 +105,7 @@ function OpenDialogBody({ preselect }: { preselect: string | null }) {
       <DialogHeader>
         <DialogTitle>Open</DialogTitle>
         <DialogDescription>
-          OpenChrom CSV (FID or MS), ANDI-MS .cdf or JCAMP-DX files, or a pyGCxGC project (.gcxgc).
+          OpenChrom CSV (FID or MS), ANDI-MS .cdf or JCAMP-DX files, or a project (.gcxgc).
         </DialogDescription>
       </DialogHeader>
       <FileBrowser

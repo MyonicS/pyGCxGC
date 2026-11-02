@@ -5,7 +5,7 @@ spectrum of any point and identify it against a spectral library, either a
 licensed NIST MS Search library or open libraries in MSP format.
 
 !!! note "Deprecated"
-    The Tk viewer is replaced by [pyGCxGC Studio](app.md#gcxgc-ms), which does
+    The Tk viewer is replaced by [GC²](app.md#gcxgc-ms), which does
     everything described here. `pygcxgc-msviewer` now starts the app; add
     `--legacy` for the Tk viewer while it still exists. The Python functions
     described on this page are unchanged.

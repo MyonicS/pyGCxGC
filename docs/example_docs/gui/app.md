@@ -1,6 +1,6 @@
-# pyGCxGC Studio (app)
+# GC² (app)
 
-pyGCxGC Studio is the new graphical application for GCxGC data. It shows the
+GC² (gc-squared) is the new graphical application for GCxGC data. It shows the
 2D chromatogram with GPU rendering, draws and integrates masks on FID and
 GCxGC-MS data, and identifies GCxGC-MS spectra and peaks with spectral
 libraries. It replaces the Tk mask creator and MS viewer. All calculations
@@ -13,10 +13,10 @@ The app needs the `app` extra:
 
 ```bash
 pip install "pyGCxGC[app]"
-pygcxgc
+gc-squared
 ```
 
-(`python -m pyGCxGC.app` is the same command.)
+(`pygcxgc` and `python -m pyGCxGC.app` are the same command.)
 
 The app opens in its own window when [pywebview](https://pywebview.flowrl.com)
 is installed (`pip install pywebview`), otherwise in the web browser
@@ -25,9 +25,9 @@ contains an access token; `Ctrl+C` stops the app. Files and projects can be
 passed directly:
 
 ```bash
-pygcxgc -m 20 run.csv
-pygcxgc -l path/to/MSSEARCH/MAINLIB run.cdf
-pygcxgc samples.gcxgc
+gc-squared -m 20 run.csv
+gc-squared -l path/to/MSSEARCH/MAINLIB run.cdf
+gc-squared samples.gcxgc
 ```
 
 `-m` sets the modulation time in seconds for all files given. FID files need
@@ -292,7 +292,7 @@ project and its data can be moved or copied to another computer.
   *Save project as…* (`Ctrl+Shift+S`) saves a copy under another name. The
   project's name appears in the top bar; click it to save.
 * Open a project like a chromatogram (*Open*, recent files, or
-  `pygcxgc samples.gcxgc`). It replaces the open documents; with documents
+  `gc-squared samples.gcxgc`). It replaces the open documents; with documents
   open, a notice asks first. Missing files and libraries are reported and
   skipped.
 * *Menu ▸ Close all* closes all documents and the project.

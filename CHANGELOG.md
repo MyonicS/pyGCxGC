@@ -26,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Molecule structures (`pyGCxGC.ms.structures`): from library identifiers or an opt-in, cached PubChem lookup, drawn with RDKit in light or dark colours.
 - `GCxGC_MS.region_spectrum` (summed, background corrected spectrum of a mask).
 - `pygcxgc` command (the app).
+- The app is named GC² (gc-squared): window and page title, top bar, welcome screen ("GC² · pyGCxGC <version>") and the `gc-squared` command (`pygcxgc` still works). The library keeps its name.
+- App: the pyGCxGC logo (simple variant) as favicon, in the top bar and on the welcome screen.
 - API: structure info and SVG depictions, peak re-identification, region selection.
 - App milestone 4: projects (`*.gcxgc`: files, processing, masks, peak edits, selections, view and layout; *Save project*, `Ctrl+S`; `Session.load`), `gcgc.view` for Jupyter and VS Code notebooks with live state (`masks`, `peaks`, `selection`, `integration`, `library`) and changes from Python (`set_signal`, `select`, `masks.add_rect`, `on`), a compact inline layout, a rotating local log file (*Open log folder*) and the settings and cache folders from `platformdirs`.
 - Figure export (VIEW-12): the chromatogram view, the spectrum and the head-to-tail plot as PNG (2×) or SVG with axes, colour bar and overlays, in a light or dark theme.

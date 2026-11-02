@@ -1,5 +1,5 @@
 """
-Start the pyGCxGC app: ``pygcxgc [files] [options]`` or
+Start the GC² app: ``gc-squared [files] [options]`` (or ``pygcxgc``), or
 ``python -m pyGCxGC.app [files] [options]`` (spec NB-5).
 
 The app opens in a desktop window when pywebview is installed, otherwise in
@@ -30,12 +30,12 @@ def replaces_legacy_tool(tool: str, app_args: list[str]) -> int | None:
     if any(importlib.util.find_spec(m) is None for m in ("fastapi", "uvicorn")):
         print(  # noqa: T201
             f'{tool} is deprecated: install the app (pip install "pyGCxGC[app]") '
-            "and run pygcxgc. Starting the old tool.",
+            "and run gc-squared. Starting the old tool.",
             file=sys.stderr,
         )
         return None
     print(  # noqa: T201
-        f"{tool} is deprecated and now starts the pyGCxGC app (pygcxgc). "
+        f"{tool} is deprecated and now starts the GC² app (gc-squared). "
         f"Run {tool} --legacy for the old tool until it is removed.",
         file=sys.stderr,
     )
@@ -44,7 +44,7 @@ def replaces_legacy_tool(tool: str, app_args: list[str]) -> int | None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="pygcxgc", description="pyGCxGC app (local only)"
+        prog="gc-squared", description="GC², the pyGCxGC app (local only)"
     )
     parser.add_argument("files", nargs="*", help="chromatograms or a .gcxgc project")
     parser.add_argument("-l", "--library", help="spectral library to load")
@@ -133,7 +133,7 @@ def _run_window(url: str) -> bool:
     # exports and figures are downloads
     if hasattr(webview, "settings"):
         webview.settings["ALLOW_DOWNLOADS"] = True
-    webview.create_window("pyGCxGC Studio", url, width=1400, height=900)
+    webview.create_window("GC²", url, width=1400, height=900)
     webview.start()
     return True
 

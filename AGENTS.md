@@ -108,6 +108,12 @@ files you change, and do not reformat untouched legacy code.
 
 ## Non-obvious facts
 
+* **Names.** The app (frontend, desktop binary) is **gc-squared**, shown as
+  "GC²" (`²` only in displayed text, never in identifiers); the library,
+  `Session`, API and notebook viewer stay **pyGCxGC**. `gc-squared` and
+  `pygcxgc` are the same command. Internal ids (`pygcxgc.token`, the array
+  media type, the dockview theme, the settings folder) keep the old name.
+  Distribution plans: `specs/distribution-todo.md`.
 * **NIST `nist.db`** is a FairCom c-tree variable-length file. The record
   layout, the 128-entry name token table (extracted from `nistms32.dll`) and
   the delta/run mass and two-byte abundance encodings are documented in
