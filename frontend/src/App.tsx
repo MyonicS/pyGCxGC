@@ -2,6 +2,7 @@ import { Loader2, PlugZap } from 'lucide-react'
 
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { BusyOverlay } from '@/shell/BusyOverlay'
 import { CommandPalette } from '@/shell/CommandPalette'
 import { OpenDialog } from '@/shell/OpenDialog'
 import { PathDialog } from '@/shell/PathDialog'
@@ -36,7 +37,10 @@ export function App() {
     <TooltipProvider delayDuration={500}>
       <div className="flex h-full flex-col">
         <TopBar />
-        <main className="min-h-0 flex-1">{main}</main>
+        <main className="relative min-h-0 flex-1">
+          {main}
+          <BusyOverlay />
+        </main>
         <StatusBar />
       </div>
       <OpenDialog />

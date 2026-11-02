@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pygcxgc` command (the app).
 - The app is named GC² (gc-squared): window and page title, top bar, welcome screen ("GC² · pyGCxGC <version>") and the `gc-squared` command (`pygcxgc` still works). The library keeps its name.
 - App: the pyGCxGC logo (simple variant) as favicon, in the top bar and on the welcome screen.
+- App: a centred progress card (with cancel) while files and projects open; large and small numbers read `1.2×10⁻⁵` instead of `1.2e-5` (number fields accept both).
 - API: structure info and SVG depictions, peak re-identification, region selection.
 - App milestone 4: projects (`*.gcxgc`: files, processing, masks, peak edits, selections, view and layout; *Save project*, `Ctrl+S`; `Session.load`), `gcgc.view` for Jupyter and VS Code notebooks with live state (`masks`, `peaks`, `selection`, `integration`, `library`) and changes from Python (`set_signal`, `select`, `masks.add_rect`, `on`), a compact inline layout, a rotating local log file (*Open log folder*) and the settings and cache folders from `platformdirs`.
 - Figure export (VIEW-12): the chromatogram view, the spectrum and the head-to-tail plot as PNG (2×) or SVG with axes, colour bar and overlays, in a light or dark theme.
@@ -47,6 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- App: undoing the first shape of a document no longer leaves its outline drawn.
 - The mask creator could not load chromatograms or load and save masks (`pathlib.Path` was shadowed by `matplotlib.path.Path`).
 - `document.updated` events carried the previous document revision.
 - Masks on an EIC were integrated on the float32 display image instead of the float64 signal.

@@ -162,6 +162,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* busy card (BusyOverlay): shown after a delay, indeterminate bar */
+.busy-in {
+  animation: busy-in 150ms ease-out 300ms both;
+}
+@keyframes busy-in {
+  from {
+    opacity: 0;
+  }
+}
+.busy-indeterminate {
+  animation: busy-slide 1.2s ease-in-out infinite;
+}
+@keyframes busy-slide {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy-indeterminate {
+    animation-duration: 3s;
+  }
+}
+
 /* dockview, themed with the same tokens */
 .dockview-theme-pygcxgc {
   --dv-paneview-active-outline-color: var(--ring);

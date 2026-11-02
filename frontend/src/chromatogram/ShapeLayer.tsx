@@ -35,7 +35,9 @@ export function ShapeLayer({ plot, transform: t, color, draft, cursor, pending, 
   return (
     <g transform={`translate(${plot.left} ${plot.top})`} data-testid="shape-layer">
       {pending.map((p, i) => (
-        <Outline key={i} d={screenPath(vertices(p.shape), t)} color={color} subtract={p.subtract} />
+        <g key={i} data-testid="pending-shape">
+          <Outline d={screenPath(vertices(p.shape), t)} color={color} subtract={p.subtract} />
+        </g>
       ))}
       {draft && <DraftShape draft={draft} cursor={cursor} t={t} color={color} />}
       {selected && (

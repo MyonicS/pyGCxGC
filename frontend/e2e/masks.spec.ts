@@ -116,6 +116,22 @@ test('draw rectangle, lasso and polygon; subtract; undo and redo', async ({ page
   await expect(page.getByTestId('integration-grid')).toContainText('Unassigned')
 })
 
+test('undoing the first shape leaves nothing drawn', async ({ page, request }) => {
+  const docId = await openDocument(request, FID, { modulation_time: 20 })
+  await openApp(page)
+  await imageShown(page)
+  const at = await screenPoint(page, request, docId)
+  await page.keyboard.press('r')
+  await drag(page, at(20, 5), at(40, 10))
+  await expect(page.getByTestId('shape-row')).toHaveCount(1)
+  // the outline of the drawn shape goes once Python's raster arrives
+  await expect(page.getByTestId('pending-shape')).toHaveCount(0)
+  await page.keyboard.press('Control+z')
+  await expect(page.getByTestId('shape-row')).toHaveCount(0)
+  await page.waitForTimeout(500)
+  await expect(page.getByTestId('pending-shape')).toHaveCount(0)
+})
+
 test('drawn masks integrate exactly like integrate_masks', async ({ page, request }) => {
   const docId = await openDocument(request, FID, { modulation_time: 20 })
   await openApp(page)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { colorbarTicks, formatValue, linearTicks } from './ticks'
+import { colorbarTicks, formatValue, linearTicks, parseValue } from './ticks'
 
 describe('ticks', () => {
   it('makes nice linear ticks', () => {
@@ -30,9 +30,21 @@ describe('ticks', () => {
     expect(formatValue(5000)).toBe('5000')
     expect(formatValue(1234.5)).toBe('1230')
     expect(formatValue(1234.5, 4)).toBe('1235')
-    expect(formatValue(50000)).toBe('5e4')
-    expect(formatValue(123456)).toBe('1.23e5')
-    expect(formatValue(-0.000012)).toBe('-1.2e-5')
+    expect(formatValue(50000)).toBe('5×10⁴')
+    expect(formatValue(123456)).toBe('1.23×10⁵')
+    expect(formatValue(-0.000012)).toBe('-1.2×10⁻⁵')
     expect(formatValue(NaN)).toBe('–')
+  })
+
+  it('parses typed and formatted numbers', () => {
+    expect(parseValue('2e-5')).toBe(2e-5)
+    expect(parseValue('2×10⁻⁵')).toBe(2e-5)
+    expect(parseValue(' 1.23×10⁵ ')).toBe(123000)
+    expect(parseValue('2x10^-5')).toBe(2e-5)
+    expect(parseValue('-1.5*10^3')).toBe(-1500)
+    expect(parseValue('12.5')).toBe(12.5)
+    expect(parseValue(formatValue(-0.000012))).toBe(-0.000012)
+    expect(parseValue('')).toBeNaN()
+    expect(parseValue('abc')).toBeNaN()
   })
 })

@@ -171,7 +171,14 @@ export function ChromView({ doc }: { doc: DocumentInfo }) {
   }, [image?.overview])
 
   // a drawn shape stays outlined until Python's raster of it arrives (the
-  // overlay changes); switching tools or documents abandons a polygon
+  // overlay changes); switching tools or documents abandons a polygon. Stale
+  // shapes are dropped, or they would come back when the overlay returns to
+  // an earlier value (empty again after undoing the first shape)
+  const [pendingOverlay, setPendingOverlay] = useState(overlay)
+  if (pendingOverlay !== overlay) {
+    setPendingOverlay(overlay)
+    setPendingState([])
+  }
   const pending = pendingState.filter((p) => p.overlay === overlay)
   const polygon =
     polygonState && polygonState.tool === tool && polygonState.docId === docId ? polygonState : null

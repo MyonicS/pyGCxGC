@@ -24,17 +24,45 @@ export function linearTicks(lo: number, hi: number, lengthPx: number, spacing = 
   }))
 }
 
-/** Compact number for readouts and colour bars ("1.23e5", "0.0421", "12.5", "5000"). */
+const SUPERSCRIPT: Record<string, string> = {
+  '-': '⁻',
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+}
+
+/** Compact number for readouts and colour bars ("1.23×10⁵", "0.0421", "12.5", "5000"). */
 export function formatValue(v: number, digits = 3): string {
   if (!Number.isFinite(v)) return '–'
   if (v === 0) return '0'
   const a = Math.abs(v)
   if (a >= 1e4 || a < 1e-3) {
     const [m, e] = v.toExponential(digits - 1).split('e')
-    return `${trimZeros(m)}e${e.replace('+', '')}`
+    const exponent = [...e.replace('+', '')].map((c) => SUPERSCRIPT[c]).join('')
+    return `${trimZeros(m)}×10${exponent}`
   }
   // toPrecision switches to exponents from 10^digits on; Number() undoes that
   return String(Number(v.toPrecision(digits)))
+}
+
+const FROM_SUPERSCRIPT = Object.fromEntries(Object.entries(SUPERSCRIPT).map(([k, v]) => [v, k]))
+
+/**
+ * Number typed by the user or shown by {@link formatValue}: "2e-5", "2×10⁻⁵",
+ * "2x10^-5" or "2*10^-5"; NaN otherwise.
+ */
+export function parseValue(text: string): number {
+  const t = text.trim().replace(/[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]/g, (c) => FROM_SUPERSCRIPT[c])
+  if (t === '') return NaN
+  const m = /^([+-]?(?:\d+\.?\d*|\.\d+))\s*[×x*]\s*10\s*\^?\s*([+-]?\d+)$/i.exec(t)
+  return m ? Number(`${m[1]}e${m[2]}`) : Number(t)
 }
 
 function trimZeros(s: string): string {

@@ -17,7 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { COLORMAPS, colormapGradient } from '@/lib/colormaps'
 import { SCALING_LABELS, SCALINGS, type Scaling } from '@/lib/scaling'
-import { formatValue } from '@/lib/ticks'
+import { formatValue, parseValue } from '@/lib/ticks'
 import { cn } from '@/lib/utils'
 import type { DocImage } from '@/store/images'
 import {
@@ -319,7 +319,7 @@ function Segmented<T extends string>({
   )
 }
 
-/** A number input that commits on Enter or blur and accepts "1e5". */
+/** A number input that commits on Enter or blur and accepts "1e5" or "1×10⁵". */
 export function NumberField({
   label,
   value,
@@ -338,7 +338,7 @@ export function NumberField({
   const text = draft ?? (Number.isFinite(value) ? formatValue(value, 4) : '')
   const commit = () => {
     if (draft === null) return
-    const v = Number(draft)
+    const v = parseValue(draft)
     setDraft(null)
     if (draft.trim() !== '' && Number.isFinite(v)) onCommit(v)
   }
