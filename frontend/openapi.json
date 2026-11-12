@@ -562,6 +562,18 @@
             "title": "Db No",
             "type": "integer"
           },
+          "delta_match": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Match minus the best match of a different compound",
+            "title": "Delta Match"
+          },
           "formula": {
             "title": "Formula",
             "type": "string"
@@ -600,6 +612,18 @@
           "nist_no": {
             "title": "Nist No",
             "type": "integer"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Percent, assuming the compound is in the active libraries; None for search settings without a calibration",
+            "title": "Probability"
           },
           "rank": {
             "title": "Rank",
@@ -1603,6 +1627,7 @@
                 "type": "null"
               }
             ],
+            "description": "A user label ('' removes it)",
             "title": "Category"
           },
           "delete": {
@@ -1620,8 +1645,18 @@
                 "type": "null"
               }
             ],
-            "description": "Hit of the current selection",
+            "description": "Rank of the hit to assign",
             "title": "Hit Rank"
+          },
+          "hits": {
+            "default": "selection",
+            "description": "hit_rank of the current selection's hits or the peak's own",
+            "enum": [
+              "selection",
+              "peak"
+            ],
+            "title": "Hits",
+            "type": "string"
           },
           "name": {
             "anyOf": [
@@ -2331,6 +2366,18 @@
           "n_average": {
             "title": "N Average",
             "type": "integer"
+          },
+          "probability_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the hits have no probability (uncalibrated settings)",
+            "title": "Probability Note"
           },
           "region": {
             "anyOf": [

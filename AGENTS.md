@@ -11,8 +11,10 @@ uv sync --extra dev --extra app   # creates .venv (Python >= 3.10)
 uv pip install -e .               # needed for the console scripts
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src/pyGCxGC/ms src/pyGCxGC/app src/pyGCxGC/masks.py \
+    src/pyGCxGC/regions src/pyGCxGC/render.py \
     src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py tests/test_masks.py \
-    tests/test_app.py tests/test_notebook.py tests/test_structures.py tests/synthetic.py
+    tests/test_app.py tests/test_notebook.py tests/test_structures.py tests/synthetic.py \
+    tests/test_regions.py tests/test_labels.py
 .venv/bin/ruff format <files you touched>
 .venv/bin/pygcxgc [file|project.gcxgc] [-l LIBRARY]   # = python -m pyGCxGC.app; opens a pywebview window or the browser
 .venv/bin/pygcxgc --headless                        # serve only: prints READY <port> and the URL with the token
@@ -47,8 +49,11 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/ms/baseline.py` | Baseline models: `none`, `modulation_percentile` (default), `rolling_percentile`, spectra-only `local` and `reference` |
 | `src/pyGCxGC/ms/library.py` | `SpectralLibrary` (CSR-like peaks + metadata), MSP I/O, `.npz` cache, `load_library`, MoNA download |
 | `src/pyGCxGC/ms/nist.py` | Reader for NIST MS Search `MAINLIB/nist.db`, the structures in `struct.db`/`struct.in6` and the retention indices in `ri.dat` (formats documented in the module docstring) |
-| `src/pyGCxGC/ms/search.py` | Composite match factor / reverse match (Stein & Scott), sparse prescreen |
+| `src/pyGCxGC/ms/search.py` | Composite match factor / reverse match (Stein & Scott), sparse prescreen; `delta_match`, match `probability` and compound identity (`annotate_hits`, calibration in `ms/match_probability.json`) |
 | `src/pyGCxGC/ms/peaks.py` | 2D peak detection (local maxima + nearest-apex blob volumes) and batch identification |
+| `src/pyGCxGC/regions/` | `classes` (labels, rule language, `ClassScheme`, built-in `schemes/hydrocarbon-group-type.json`, evidence cards), `from_peaks` (band/hull masks and their report), `alignment` (RT2 delay, solvent cut-off suggestion), `grade` (exploratory/reportable) |
+| `src/pyGCxGC/render.py` | `render_chromatogram`: deterministic matplotlib (Agg) PNG with masks, peaks and a text caption |
+| `scripts/calibrate_match_probability.py` | Fits the temperature of the match probability on distorted library spectra (NIST if present); prints aggregates only |
 | `src/pyGCxGC/ms/structures.py` | Structure resolver: library identifiers, then opt-in PubChem (`PubChem`, rate limited), SQLite `StructureCache`, RDKit `depict_svg` |
 | `src/pyGCxGC/gui/ms_viewer.py` | Tk GCxGC-MS viewer (`pygcxgc-msviewer`, `pyGCxGC.launch_ms_viewer`); drawing only, all logic goes through a `Session` |
 | `src/pyGCxGC/app/session.py` | `Session`: documents, jobs, events, libraries, selection/search, peaks, masks with undo, export. Core dependencies only |
@@ -61,7 +66,8 @@ files you change, and do not reformat untouched legacy code.
 | `tests/test_masks.py`, `tests/test_app.py` | `MaskSet`; `Session` and the API (FastAPI `TestClient`) |
 | `tests/test_notebook.py` | Milestone 4: projects, settings migration and logs, active document, view state, the viewer (real server thread) and `pygcxgc --headless` |
 | `tests/test_structures.py` | Structure resolver and cache with a stubbed PubChem (`pubchem()` is reused by `test_app.py` and `e2e/backend.py`) |
-| `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests |
+| `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests; `synthetic_pair()`: MS + FID run of one sample (alkanes, a monoaromatic band, diaromatics, phenol, solvent, MS 0.5 s later), `pair_library()` with SMILES, `write_fid_csv` |
+| `tests/test_regions.py`, `tests/test_labels.py` | Core of `regions` and `render` on the synthetic pair; the `Session` methods for labels, review, rules, masks from peaks, delay, grade and projects |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
 | `frontend/src/api/` | Transport (HTTP + WebSocket, spec NB-4), typed client, binary array decoder; `schema.d.ts` is generated |
 | `frontend/src/store/` | Zustand: `session` (mirror of the backend, refreshed by events; per-document mask edit queue), `view` (display, zoom, tool, active mask, selected shape), `images` (overview + detail layers), `masks.ts` (mask commands), `viewSync.ts` (view state to/from the backend for projects) |
@@ -157,6 +163,42 @@ files you change, and do not reformat untouched legacy code.
   ion within its modulation, and channels below `3 * noise` (scaled MAD) are
   zeroed. Scan 0 of Shimadzu runs is an injection artefact, so peak detection
   skips the first modulation.
+* **Labels** live in the peak table (`regions.classes.LABEL_COLUMNS`:
+  `category`, `subclass`, `category_source` = `rule:<scheme>/<class>`,
+  `agent` or `user`, `category_reason`, `category_confidence`, `reviewed`,
+  and the built-in proposal). `Session.set_categories(channel=...)` is the
+  one entry point: the app and Python label as `user`, the MCP server will
+  pass `channel="agent"`. User labels win (conflicts are recorded in
+  `peaks_info["conflicts"]`); `detect_peaks` refuses to drop reviewed labels
+  without `discard_labels=True`. Project class schemes are saved as
+  `<project>.classes.json` next to the project; projects also store the top
+  10 hits per peak (metadata only) and the delay estimates.
+* `Session.edit_peak(hit_rank=)` takes the peak's own hits by default; the
+  HTTP route passes `hits="selection"` (the default of `PeakEdit.hits`),
+  because the app's "Assign to peak" button sends the rank shown in the Hits
+  panel.
+* **Match probability** is calibrated for `(m/z)^0.5·I^0.5` only (T = 11.6
+  on NIST, `docs/research/match-probability.md`); other exponents give
+  `None` and a `probability_note`. Tests stub `match_calibration`. Search
+  keeps 20 hits per library for the competition before cutting to `n_hits`.
+* **Solvent cut-offs**: `None` = not set (treated as 0), `0` = checked. MS
+  runs zero the background-corrected signal up to the cut-off (the baseline
+  is fitted on all scans, so `None` keeps the default baseline
+  bit-identical). Project format version 2 converts version 1's `0` to
+  `None`. The cut-off suggestion needs a dominant early maximum (10× the
+  median, `docs/research/delay-and-solvent.md`): Clean PP_016 has no solvent
+  and gets none.
+* **Delay**: on Clean PP_016 the MS is 0.53 s (+5 scans) behind the FID;
+  `estimate_delay` must stay within 0.5 ± 0.1 s there (`test_regions.py`).
+  Masks copied with `import_masks(from_document=)` record `meta["copied_from"]`
+  with a fingerprint of their operations, for the grade. `Mask.meta` is
+  written to files only when not empty.
+* Legacy FID fixes: `parse_2D_chromatogram` compared the modulation time (s)
+  with the sampling interval (ms), and `add_split` divided by a non-integer
+  row count when the inferred interval was a hair below the nominal one; it
+  is rounded now (identical splits for data that worked before). The OpenChrom
+  CSV reader uses the first data line as header, so `write_fid_csv` writes a
+  dummy line.
 * `estimate_modulation_time` uses the TIC autocorrelation, refined with
   harmonics. It must return 20.0 s for the PY_010 run.
 * **Exact integration.** `MaskSet.integrate` multiplies the `chrom_2D`

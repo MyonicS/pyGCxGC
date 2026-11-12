@@ -284,6 +284,14 @@ class HitInfo(Info):
     db_no: int
     library: str
     library_id: str | None
+    delta_match: float | None = Field(
+        None, description="Match minus the best match of a different compound"
+    )
+    probability: float | None = Field(
+        None,
+        description="Percent, assuming the compound is in the active libraries; "
+        "None for search settings without a calibration",
+    )
 
 
 class RegionInfo(Info):
@@ -307,6 +315,9 @@ class SelectionInfo(Info):
     snr: float
     hits: list[HitInfo] | None
     libraries: list[str]
+    probability_note: str | None = Field(
+        None, description="Why the hits have no probability (uncalibrated settings)"
+    )
 
 
 # ------------------------------------------------------------------ peaks
@@ -319,8 +330,12 @@ class DetectPeaksRequest(Model):
 class PeakEdit(Model):
     peak_id: int
     name: str | None = None
-    hit_rank: int | None = Field(None, ge=1, description="Hit of the current selection")
-    category: str | None = None
+    hit_rank: int | None = Field(None, ge=1, description="Rank of the hit to assign")
+    hits: Literal["selection", "peak"] = Field(
+        "selection",
+        description="hit_rank of the current selection's hits or the peak's own",
+    )
+    category: str | None = Field(None, description="A user label ('' removes it)")
     delete: bool = False
 
 

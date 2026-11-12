@@ -83,7 +83,14 @@ from pyGCxGC.ms.library import (
     load_library,
 )
 from pyGCxGC.ms.peaks import detect_peaks, identify_peaks
-from pyGCxGC.ms.search import Hit, SearchParameters, search_spectrum
+from pyGCxGC.ms.search import (
+    N_COMPETITORS,
+    Hit,
+    SearchParameters,
+    annotate_hits,
+    probability_unavailable,
+    search_spectrum,
+)
 from pyGCxGC.ms.structures import (
     PubChem,
     StructureCache,
@@ -94,6 +101,30 @@ from pyGCxGC.ms.structures import (
 )
 from pyGCxGC.parsing import parse_2D_chromatogram, read_chromatogram
 from pyGCxGC.processing import integrate_2D
+from pyGCxGC.regions.alignment import estimate_delay, suggest_solvent_cutoff
+from pyGCxGC.regions.classes import (
+    BUILTIN_SCHEMES,
+    CONFIDENCES,
+    LABEL_COLUMNS,
+    ClassScheme,
+    add_label_columns,
+    apply_scheme,
+    classify_peaks,
+    evidence,
+    propose,
+    review_cards,
+    scheme_colors,
+)
+from pyGCxGC.regions.from_peaks import (
+    mask_from_peaks,
+    mask_margins,
+    mask_report,
+    neighbourhood_raster,
+    peak_pixels,
+    source_kind,
+)
+from pyGCxGC.regions.grade import MaskFacts, RunFacts, grade
+from pyGCxGC.render import render_chromatogram
 from pyGCxGC.vendor import vendor_kind
 
 if TYPE_CHECKING:
@@ -106,6 +137,8 @@ MAX_VIEW_BYTES = 256_000  # view state stored per document (opaque to the sessio
 PROJECT_FORMAT = "pygcxgc-project"
 PROJECT_VERSION = 2  # 2: "not set" solvent cut-offs, labels, class scheme
 PROJECT_SUFFIX = ".gcxgc"
+CLASSES_SUFFIX = ".classes.json"
+PROJECT_HITS = 10  # hits per peak saved in projects
 IDENTITY_COLUMNS = (
     "name",
     "match",
@@ -115,6 +148,15 @@ IDENTITY_COLUMNS = (
     "cas",
     "nist_no",
     "library",
+    "delta_match",
+    "probability",
+)
+_TEXT_IDENTITY = ("name", "formula", "cas", "library")
+ALIGNMENT_ASSUMPTIONS = (
+    "ALIGN-1: the FID and MS runs used the same column set, oven programme and "
+    "modulation time, so a compound elutes in the same modulation in both runs",
+    "ALIGN-2: RT2 differs by a constant detector delay only, corrected with the "
+    "MS phase shift; other differences are not corrected",
 )
 DEFAULT_SETTINGS: dict[str, Any] = {
     "theme": "system",
@@ -459,6 +501,8 @@ class Selection:
     libraries: list[str] = field(default_factory=list)
     region: dict | None = None
     id: int = field(default_factory=lambda: next(_selection_ids))
+    # why the hits have no probability (spec MPR-5), None when they have one
+    probability_note: str | None = None
 
     def info(self) -> dict:
         return {
@@ -467,6 +511,7 @@ class Selection:
             "region": self.region,
             "hits": None if self.hits is None else [hit_dict(h) for h in self.hits],
             "libraries": list(self.libraries),
+            "probability_note": self.probability_note,
         }
 
 
@@ -477,6 +522,8 @@ def hit_dict(hit: Hit) -> dict:
     d["reverse_match"] = float(hit.reverse_match)
     d["index"] = hit.index
     d["library_id"] = hit.extra.get("library_id")
+    d["delta_match"] = None if hit.delta_match is None else float(hit.delta_match)
+    d["probability"] = None if hit.probability is None else float(hit.probability)
     return d
 
 
@@ -501,6 +548,8 @@ class Document:
         self.warnings: list[str] = []
         # display and zoom of the frontend (opaque here), saved in projects
         self.view: dict | None = None
+        # delay estimates with this document as the target, by source id (ALN-3)
+        self.delay_estimates: dict[str, dict] = {}
 
     @property
     def grid(self) -> Grid:
@@ -888,6 +937,8 @@ class Session:
         self._svg_cache: OrderedDict = OrderedDict()
         self._active_id: str | None = None
         self.project_path: str | None = None
+        # classes defined for the project (spec CLS-11), <project>.classes.json
+        self.class_scheme = ClassScheme("project")
 
     def close(self) -> None:
         """Cancel running jobs and stop the worker pool."""
@@ -1366,6 +1417,7 @@ class Session:
             new.hits, new.libraries = self._search_spectrum(
                 new.spectrum.corrected, doc.data.mass_range, None
             )
+            new.probability_note = self._probability_note()
         self.emit("selection.changed", doc.id, selection=new.info())
 
     def _research(self, reason: str) -> Job | None:
@@ -1393,6 +1445,7 @@ class Session:
                 )
                 if doc.selection is sel:  # not replaced meanwhile
                     sel.hits, sel.libraries = hits, libs
+                    sel.probability_note = self._probability_note()
                     self.emit("selection.changed", doc.id, selection=sel.info())
             return {"n_documents": len(docs), "reason": reason}
 
@@ -1460,7 +1513,9 @@ class Session:
                 "", -1, -1, -1, np.nan, np.nan, 1, False, "", 0, spec, spec
             )
             hits, libs = self._search_spectrum(spec, None, n_hits)
-            return Selection(result, hits, libs)
+            return Selection(
+                result, hits, libs, probability_note=self._probability_note()
+            )
         if document_id is None:
             raise InvalidRequest("Give a document or a spectrum")
         doc = self.document(document_id, "ms")
@@ -1472,9 +1527,15 @@ class Session:
             selection.spectrum.corrected, doc.data.mass_range, n_hits
         )
         selection.hits, selection.libraries = hits, libs
+        selection.probability_note = self._probability_note()
         if doc.selection is selection:
             self.emit("selection.changed", doc.id, selection=selection.info())
         return selection
+
+    def _probability_note(self) -> str | None:
+        """Why the search settings give no match probability (spec MPR-5)."""
+        params = self.search_parameters()
+        return probability_unavailable(params.mz_power, params.int_power)
 
     def _search_spectrum(
         self, spec: Spectrum, mass_range, n_hits
@@ -1484,14 +1545,17 @@ class Session:
             params.n_hits = int(n_hits)
         records = self.active_libraries()
         merged: list[Hit] = []
+        # the probability needs the competitors of every library (spec MPR-3)
+        per_library = replace(params, n_hits=max(params.n_hits, N_COMPETITORS))
         for rec in records:
             for hit in search_spectrum(
-                spec.mz, spec.intensity, rec.library, copy.copy(params)
+                spec.mz, spec.intensity, rec.library, copy.copy(per_library)
             ):
                 hit.library = rec.name
                 hit.extra["library_id"] = rec.id
                 merged.append(hit)
         merged.sort(key=lambda h: (h.match, h.reverse_match), reverse=True)
+        annotate_hits(merged, params.mz_power, params.int_power)
         min_match = float(self.settings.get("search", {}).get("min_match", 0) or 0)
         merged = [h for h in merged if h.match >= min_match][: params.n_hits]
         for rank, hit in enumerate(merged, start=1):
@@ -1505,12 +1569,32 @@ class Session:
         snr: float = 10.0,
         identify: bool = True,
         n_average: int = 3,
+        discard_labels: bool = False,
     ) -> Job:
-        """Detect (and identify with the active libraries) the peaks (job)."""
+        """
+        Detect (and identify with the active libraries) the peaks (job).
+
+        The peak table is rebuilt and the positional ``peak_id``s change, so
+        labels are lost: while the table has reviewed labels this is refused
+        unless ``discard_labels`` (spec CLS-3).
+        """
         doc = self.document(document_id, "ms")
         assert isinstance(doc, MSDocument)
         if snr <= 0:
             raise InvalidRequest("The peak S/N must be positive")
+        with doc.lock:
+            old = doc.peaks
+            n_reviewed = (
+                int(old["reviewed"].fillna(False).astype(bool).sum())
+                if old is not None and "reviewed" in old
+                else 0
+            )
+        if n_reviewed and not discard_labels:
+            raise InvalidRequest(
+                f"The peak table has {n_reviewed} reviewed labels, which detecting "
+                "again would lose (peak ids change). Re-identify instead, or pass "
+                "discard_labels=True"
+            )
 
         def work(job: Job):
             data = doc.data
@@ -1519,8 +1603,10 @@ class Session:
             table = detect_peaks(data, snr=snr)
             table, hits = self._identify(job, data, table, records, n_average)
             table["assigned_by"] = np.where(table["name"] != "", "library", "")
-            table["category"] = ""
-            self._store_peaks(doc, data, table, hits, records, snr, n_average)
+            add_label_columns(table)
+            self._store_peaks(
+                doc, data, table, hits, records, snr, n_average, keep_labels=False
+            )
             return {"n_peaks": len(table)}
 
         label = "Detecting & identifying peaks" if identify else "Detecting peaks"
@@ -1564,6 +1650,7 @@ class Session:
             for pid in table.loc[user, "peak_id"]:
                 if pid in old_hits:
                     hits.setdefault(pid, old_hits[pid])
+            add_label_columns(table)  # labels are kept (spec CLS-3)
             self._store_peaks(doc, data, table, hits, records, snr, n_average)
             return {"n_peaks": len(table)}
 
@@ -1598,18 +1685,36 @@ class Session:
             for pid, peak_hits in lib_hits.items():
                 combined = hits.get(pid, []) + peak_hits
                 combined.sort(key=lambda h: h.match, reverse=True)
-                hits[pid] = combined[: params.n_hits]
-        if not records:
-            for col in IDENTITY_COLUMNS:
-                table[col] = "" if col in ("name", "formula", "cas", "library") else 0
+                hits[pid] = combined
+        params = self.search_parameters(data.mass_range)
+        for pid, combined in hits.items():
+            if len(records) > 1:  # the competitors of all libraries
+                annotate_hits(combined, params.mz_power, params.int_power)
+            hits[pid] = combined[: params.n_hits]
         for col in IDENTITY_COLUMNS:
             if col not in table:
-                table[col] = "" if col in ("name", "formula", "cas", "library") else 0
+                table[col] = "" if col in _TEXT_IDENTITY else 0
+        if len(records) > 1 and len(table):
+            best = [hits.get(int(p), [None])[0] for p in table["peak_id"]]
+            table["delta_match"] = [
+                _rounded(h.delta_match if h else None) for h in best
+            ]
+            table["probability"] = [
+                _rounded(h.probability if h else None, 1) for h in best
+            ]
         table["baseline"] = data.baseline.describe()
         return table, hits
 
-    def _store_peaks(self, doc, data, table, hits, records, snr, n_average) -> None:
+    def _store_peaks(
+        self, doc, data, table, hits, records, snr, n_average, keep_labels=True
+    ) -> None:
+        """
+        Store a peak table. ``keep_labels``: the peak ids are the same
+        (re-identification), so open label conflicts and the proposal
+        settings stay; a new detection drops them (spec CLS-3).
+        """
         with doc.lock:
+            old = doc.peaks_info if keep_labels else {}
             changed = doc.data is not data
             doc.peaks = table
             doc.peak_hits = hits
@@ -1624,6 +1729,9 @@ class Session:
                 "baseline": data.baseline.describe(),
                 "snr": float(snr),
                 "n_average": int(n_average),
+                "probability_note": self._probability_note() if records else None,
+                "conflicts": list(old.get("conflicts") or []),
+                "proposal": old.get("proposal"),
             }
         self.emit(
             "peaks.updated", doc.id, n_peaks=len(table), stale=doc.peaks_info["stale"]
@@ -1646,16 +1754,30 @@ class Session:
         hit_rank: int | None = None,
         delete: bool = False,
         category: str | None = None,
+        hits: str = "peak",
     ) -> None:
         """
-        Edit a peak: rename it, assign a hit of the current selection, set
-        its category or delete it. Edits are marked ``assigned_by = "user"``.
+        Edit a peak: rename it, assign one of its hits, set its category or
+        delete it. Edits are marked ``assigned_by = "user"``, so a later
+        re-identification keeps them (also category-only edits, spec CLS-19).
+
+        Parameters
+        ----------
+        hit_rank : int, optional
+            Rank (1-based) of the hit that becomes the peak's identity.
+        category : str, optional
+            A user label (spec CLS-1; "" removes the label).
+        hits : {"peak", "selection"}, default "peak"
+            Where ``hit_rank`` points: the peak's own hits, or the hits of
+            the current selection (the app's Hits panel).
         """
         doc = self.document(document_id, "ms")
         assert isinstance(doc, MSDocument)
+        if hits not in ("peak", "selection"):
+            raise InvalidRequest("hits must be 'peak' or 'selection'")
         with doc.lock:
             if doc.peaks is None:
-                raise InvalidRequest("No peak table")
+                raise InvalidRequest("No peak table: detect peaks first")
             rows = doc.peaks.index[doc.peaks["peak_id"] == peak_id]
             if not len(rows):
                 raise NotFound(f"No peak {peak_id}")
@@ -1664,12 +1786,18 @@ class Session:
             if delete:
                 doc.peaks = table.drop(index=row).reset_index(drop=True)
                 doc.peak_hits.pop(peak_id, None)
+                self._clear_conflicts(doc, [peak_id])
             else:
                 if hit_rank is not None:
-                    hits = doc.selection.hits if doc.selection else None
-                    if not hits or not 1 <= hit_rank <= len(hits):
-                        raise InvalidRequest("No such hit in the current selection")
-                    h = hits[hit_rank - 1]
+                    if hits == "selection":
+                        candidates = doc.selection.hits if doc.selection else None
+                        where = "the current selection"
+                    else:
+                        candidates = doc.peak_hits.get(int(peak_id))
+                        where = f"the hits of peak {peak_id} (re-identify to get them)"
+                    if not candidates or not 1 <= hit_rank <= len(candidates):
+                        raise InvalidRequest(f"No hit {hit_rank} in {where}")
+                    h = candidates[hit_rank - 1]
                     values = {
                         "name": h.name,
                         "match": round(h.match),
@@ -1679,16 +1807,31 @@ class Session:
                         "cas": h.cas,
                         "nist_no": h.nist_no,
                         "library": h.library,
+                        "delta_match": _rounded(h.delta_match),
+                        "probability": _rounded(h.probability, 1),
                     }
                     for col, value in values.items():
                         if col in table:
+                            table[col] = table[col].astype(object)
                             table.loc[row, col] = value
                     table.loc[row, "assigned_by"] = "user"
                 if name is not None:
                     table.loc[row, "name"] = name
                     table.loc[row, "assigned_by"] = "user"
                 if category is not None:
-                    table.loc[row, "category"] = category
+                    add_label_columns(table)
+                    self._write_label(
+                        table,
+                        row,
+                        category,
+                        "",
+                        "user",
+                        "",
+                        "",
+                        reviewed=bool(category),
+                    )
+                    table.loc[row, "assigned_by"] = "user"
+                    self._clear_conflicts(doc, [peak_id])
         self.emit(
             "peaks.updated",
             doc.id,
@@ -1926,12 +2069,24 @@ class Session:
         except (OSError, ValueError, KeyError) as exc:
             raise InvalidRequest(str(exc)) from exc
 
+        source = self.document(from_document) if from_document is not None else None
+
         def fn(ms: MaskSet) -> list[str]:
             if replace_all:
                 ms.masks.clear()
             ids = []
             for mask in incoming:
                 copy_ = mask.copy(ms.unique_name(mask.name), new_id=mask.id in ms)
+                if source is not None and source is not doc:
+                    # remembered for the grade (spec TOOL-14, GRD-1)
+                    copy_.meta["copied_from"] = {
+                        "document_id": source.id,
+                        "document": source.name,
+                        "path": source.path,
+                        "mask_id": mask.id,
+                        "mask": mask.name,
+                        "fingerprint": copy_.fingerprint(),
+                    }
                 ids.append(ms.append(copy_).id)
             return ids
 
@@ -2088,6 +2243,1329 @@ class Session:
             if op.id == operation_id:
                 return k
         raise NotFound(f"No operation {operation_id!r} in mask {mask.name!r}")
+
+    # ------------------------------------------------------------ labels (spec mcp.md §5)
+    def _peak_doc(self, document_id: str) -> MSDocument:
+        doc = self.document(document_id, "ms")
+        assert isinstance(doc, MSDocument)
+        if doc.peaks is None:
+            raise InvalidRequest("No peak table: run detect_peaks first")
+        return doc
+
+    @staticmethod
+    def _write_label(
+        table: pd.DataFrame,
+        row,
+        category: str,
+        subclass: str,
+        source: str,
+        reason: str,
+        confidence,
+        reviewed: bool,
+    ) -> None:
+        if not category:  # removing a label
+            subclass, source, reason, confidence, reviewed = "", "", "", "", False
+        table["category_confidence"] = table["category_confidence"].astype(object)
+        table.loc[row, "category"] = category
+        table.loc[row, "subclass"] = subclass or ""
+        table.loc[row, "category_source"] = source
+        table.loc[row, "category_reason"] = reason or ""
+        table.loc[row, "category_confidence"] = confidence
+        table.loc[row, "reviewed"] = bool(reviewed)
+
+    @staticmethod
+    def _clear_conflicts(doc: MSDocument, peak_ids) -> None:
+        ids = {int(p) for p in peak_ids}
+        conflicts = doc.peaks_info.get("conflicts") or []
+        doc.peaks_info["conflicts"] = [c for c in conflicts if c["peak_id"] not in ids]
+
+    @staticmethod
+    def _add_conflicts(doc: MSDocument, conflicts: list[dict]) -> None:
+        if not conflicts:
+            return
+        ids = {c["peak_id"] for c in conflicts}
+        kept = [
+            c for c in doc.peaks_info.get("conflicts") or [] if c["peak_id"] not in ids
+        ]
+        doc.peaks_info["conflicts"] = kept + conflicts
+
+    def _peaks_changed(self, doc: MSDocument, change: str) -> None:
+        self.emit(
+            "peaks.updated",
+            doc.id,
+            n_peaks=len(doc.peaks) if doc.peaks is not None else 0,
+            stale=doc.peaks_info.get("stale", False),
+            change=change,
+        )
+
+    def _library_objects(self) -> dict[str, SpectralLibrary]:
+        """Loaded libraries by id and by name (for the hit structures)."""
+        out: dict[str, SpectralLibrary] = {}
+        for rec in self.libraries.values():
+            if rec.library is not None:
+                out.setdefault(rec.name, rec.library)
+                out[rec.id] = rec.library
+        return out
+
+    @staticmethod
+    def _spectra_of(doc: MSDocument):
+        """Measured apex spectra of peak rows, as peak identification uses them."""
+        data = doc.data
+        n_average = int(doc.peaks_info.get("n_average", 3))
+        model = data.baseline.image_model
+        cache: dict[int, tuple] = {}
+
+        def spectrum(row) -> tuple:
+            scan = int(row["scan"])
+            if scan not in cache:
+                s = data.spectrum(scan, n_average=n_average, baseline=model)
+                cache[scan] = (s.mz, s.intensity)
+            return cache[scan]
+
+        return spectrum
+
+    def class_schemes(self) -> list[dict]:
+        """The built-in schemes and the project scheme, with their classes."""
+        out = [
+            {**ClassScheme.builtin(name).to_dict(), "builtin": True}
+            for name in BUILTIN_SCHEMES
+        ]
+        out.append({**self.class_scheme.to_dict(), "builtin": False})
+        return out
+
+    def scheme(self, name: str = "project") -> ClassScheme:
+        """A class scheme: ``"project"`` (editable) or a built-in one."""
+        if name == "project":
+            return self.class_scheme
+        try:
+            return ClassScheme.builtin(name)
+        except KeyError:
+            raise NotFound(
+                f"No class scheme {name!r}; use 'project' or {', '.join(BUILTIN_SCHEMES)}"
+            ) from None
+
+    def class_color(self, category: str | None) -> str | None:
+        """Colour of a class: the project scheme first, then the built-in ones."""
+        if not category:
+            return None
+        for scheme in (self.class_scheme, *map(ClassScheme.builtin, BUILTIN_SCHEMES)):
+            color = scheme.color(category)
+            if color:
+                return color
+        return None
+
+    def set_categories(
+        self,
+        document_id: str,
+        assignments: list[dict],
+        overwrite_user: bool = False,
+        as_user: bool = False,
+        channel: str = "user",
+    ) -> dict:
+        """
+        Label peaks (spec CLS-6, CLS-18).
+
+        Parameters
+        ----------
+        assignments : list of dict
+            Up to 200 of ``{"peak_id", "category", "subclass"?,
+            "confidence"?, "reason"?}``. ``category`` "" removes a label;
+            ``unknown`` is a valid label. The peaks are marked reviewed.
+        overwrite_user : bool, default False
+            Replace labels set by the user; otherwise they are kept and the
+            differences are recorded as open conflicts.
+        as_user : bool, default False
+            For ``channel="agent"``: a label the user dictated. Honoured only
+            when the setting ``mcp.allow_user_labels`` is on.
+        channel : {"user", "agent"}
+            Who sets the labels: the app and Python set ``user`` labels, the
+            MCP server ``agent`` labels (which need a ``confidence`` of high,
+            medium or low, and a ``reason`` where they differ from the
+            proposal).
+
+        Returns
+        -------
+        dict
+            ``n_set``, ``rejected`` (with the reason), ``conflicts`` and
+            ``progress`` (:meth:`review_status` counts).
+        """
+        if channel not in ("user", "agent"):
+            raise InvalidRequest("channel must be 'user' or 'agent'")
+        if len(assignments) > 200:
+            raise InvalidRequest("At most 200 assignments per call")
+        source = channel
+        if channel == "agent" and as_user:
+            if not self.settings.get("mcp", {}).get("allow_user_labels"):
+                raise InvalidRequest(
+                    "as_user needs the setting mcp.allow_user_labels, which the "
+                    "user can turn on in the app's settings"
+                )
+            source = "user"
+        doc = self._peak_doc(document_id)
+        n_set, rejected, conflicts = 0, [], []
+        with doc.lock:
+            table = add_label_columns(doc.peaks)
+            index = {
+                int(p): i for i, p in zip(table.index, table["peak_id"], strict=True)
+            }
+            for a in assignments:
+                try:
+                    pid = int(a["peak_id"])
+                    category = str(a["category"]).strip()
+                except (KeyError, TypeError, ValueError):
+                    rejected.append(
+                        {"assignment": a, "reason": "needs peak_id and category"}
+                    )
+                    continue
+                row = index.get(pid)
+                if row is None:
+                    rejected.append({"peak_id": pid, "reason": "no such peak"})
+                    continue
+                subclass = str(a.get("subclass") or "")
+                reason = str(a.get("reason") or "").strip()
+                confidence = a.get("confidence")
+                if source == "agent":
+                    confidence = confidence or "medium"
+                    if confidence not in CONFIDENCES:
+                        rejected.append(
+                            {
+                                "peak_id": pid,
+                                "reason": "confidence must be high, medium or low",
+                            }
+                        )
+                        continue
+                    proposal = table.loc[row, "proposal"]
+                    if category and category != proposal and not reason:
+                        rejected.append(
+                            {
+                                "peak_id": pid,
+                                "reason": f"a reason is needed: the proposal is "
+                                f"{proposal or 'none'}",
+                            }
+                        )
+                        continue
+                else:
+                    confidence = confidence if confidence in CONFIDENCES else ""
+                current = table.loc[row, "category_source"]
+                if current == "user" and source != "user" and not overwrite_user:
+                    if table.loc[row, "category"] != category:
+                        conflicts.append(
+                            {
+                                "peak_id": pid,
+                                "user": table.loc[row, "category"],
+                                "requested": category,
+                                "by": source,
+                                "reason": reason,
+                            }
+                        )
+                    else:
+                        self._clear_conflicts(doc, [pid])
+                    continue
+                self._write_label(
+                    table, row, category, subclass, source, reason, confidence, True
+                )
+                self._clear_conflicts(doc, [pid])
+                n_set += 1
+            self._add_conflicts(doc, conflicts)
+        if n_set or conflicts:
+            self._peaks_changed(doc, "labels")
+        return {
+            "n_set": n_set,
+            "rejected": rejected,
+            "conflicts": conflicts,
+            "progress": self.review_status(doc.id)["status"],
+        }
+
+    def propose_classes(
+        self,
+        document_id: str,
+        scheme: str = "hydrocarbon-group-type",
+        top_k: int = 5,
+        min_match: float = 700,
+        min_share: float = 0.6,
+    ) -> Job:
+        """
+        Propose classes with a scheme's hit vote (job, spec CLS-13).
+
+        Every peak gets the proposal columns. Unlabelled peaks and peaks with
+        an unreviewed rule label also get the proposal as their label (source
+        ``rule:<scheme>/<class>``, not reviewed); reviewed and user labels are
+        kept. Job result: per class the number of proposals, their summed
+        volume and the three largest peaks, and the number without one.
+        """
+        doc = self._peak_doc(document_id)
+        chosen = self.scheme(scheme)
+        if not 1 <= int(top_k) <= 20:
+            raise InvalidRequest("top_k must be between 1 and 20")
+        if not 0 < float(min_share) <= 1:
+            raise InvalidRequest("min_share must be between 0 and 1")
+
+        def work(job: Job):
+            with doc.lock:
+                table = add_label_columns(doc.peaks.copy())
+                hits = dict(doc.peak_hits)
+                context = {"masks": doc.masks.copy(), "grid": doc.grid}
+            job.report(0.05, "Proposing classes")
+            labels = propose(
+                table,
+                hits,
+                chosen,
+                top_k=int(top_k),
+                min_match=float(min_match),
+                min_share=float(min_share),
+                spectra=self._spectra_of(doc),
+                libraries=self._library_objects(),
+                context=context,
+            )
+            job.check()
+            total = float(table["volume"].sum()) or 1.0
+            summary: dict[str, dict] = {}
+            n_labelled = n_kept = 0
+            disagreements = []
+            with doc.lock:
+                live = add_label_columns(doc.peaks)
+                for row in live.index:
+                    pid = int(live.loc[row, "peak_id"])
+                    label = labels.get(pid)
+                    live.loc[row, "proposal"] = label.category if label else ""
+                    live.loc[row, "proposal_subclass"] = label.subclass if label else ""
+                    live.loc[row, "proposal_share"] = label.share if label else 0.0
+                    if label is None:
+                        continue
+                    entry = summary.setdefault(
+                        label.category, {"n": 0, "volume_share": 0.0, "peaks": []}
+                    )
+                    volume = float(live.loc[row, "volume"])
+                    entry["n"] += 1
+                    entry["volume_share"] += volume / total
+                    entry["peaks"].append((volume, pid, live.loc[row, "name"]))
+                    source = live.loc[row, "category_source"]
+                    if source == "user":
+                        if live.loc[row, "category"] != label.category:
+                            disagreements.append(
+                                {
+                                    "peak_id": pid,
+                                    "user": live.loc[row, "category"],
+                                    "proposal": label.category,
+                                }
+                            )
+                        n_kept += 1
+                        continue
+                    if bool(live.loc[row, "reviewed"]) or source == "agent":
+                        n_kept += 1
+                        continue
+                    self._write_label(
+                        live,
+                        row,
+                        label.category,
+                        label.subclass,
+                        label.source,
+                        "",
+                        label.share,
+                        False,
+                    )
+                    n_labelled += 1
+                doc.peaks_info["proposal"] = {
+                    "scheme": chosen.name,
+                    "top_k": int(top_k),
+                    "min_match": float(min_match),
+                    "min_share": float(min_share),
+                }
+            self._peaks_changed(doc, "labels")
+            for entry in summary.values():
+                entry["volume_share"] = round(entry["volume_share"], 4)
+                entry["largest"] = [
+                    {"peak_id": pid, "name": name, "volume_share": round(v / total, 4)}
+                    for v, pid, name in sorted(entry.pop("peaks"), reverse=True)[:3]
+                ]
+            return {
+                "scheme": chosen.name,
+                "classes": summary,
+                "n_without_proposal": sum(1 for v in labels.values() if v is None),
+                "n_labelled": n_labelled,
+                "n_kept": n_kept,
+                "user_disagreements": disagreements[:50],
+            }
+
+        return self.submit(
+            "classes", f"Proposing classes ({chosen.name})", work, doc.id
+        )
+
+    def define_class(
+        self,
+        name: str,
+        rules: list,
+        scheme: str = "project",
+        description: str = "",
+        color: str | None = None,
+        fallback: list | None = None,
+        vote: dict | None = None,
+        subclasses: list[dict] | None = None,
+    ) -> dict:
+        """
+        Add a class to the project scheme, or replace it (spec CLS-11).
+
+        Returns the class and, per open MS document with peaks, how many
+        peaks it matches, so a rule can be tested before it is applied.
+        Saved with the project as ``<project>.classes.json``.
+        """
+        if scheme != "project":
+            raise InvalidRequest("Only the project scheme can be changed")
+        try:
+            cls = self.class_scheme.define(
+                str(name).strip(),
+                list(rules),
+                description,
+                color,
+                fallback,
+                vote,
+                subclasses,
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            raise InvalidRequest(f"Invalid class: {exc}") from exc
+        single = ClassScheme("project", [cls])
+        matches = {}
+        for doc in list(self.documents.values()):
+            if not isinstance(doc, MSDocument) or doc.peaks is None:
+                continue
+            with doc.lock:
+                table, hits = doc.peaks.copy(), dict(doc.peak_hits)
+                context = {"masks": doc.masks.copy(), "grid": doc.grid}
+            labels = classify_peaks(
+                table,
+                hits,
+                single,
+                spectra=self._spectra_of(doc),
+                libraries=self._library_objects(),
+                context=context,
+            )
+            matches[doc.name] = sum(1 for v in labels.values() if v is not None)
+        self.emit(
+            "project.updated", None, change="classes", project=self.project_info()
+        )
+        return {"class": cls.to_dict(), "scheme": "project", "matches": matches}
+
+    def apply_rules(
+        self,
+        document_id: str,
+        scheme: str = "project",
+        only_unreviewed: bool = True,
+        overwrite_user: bool = False,
+    ) -> dict:
+        """
+        Label the peaks with a scheme's rules, first matching class wins
+        (spec CLS-11). Labels of project rules count as reviewed (they are
+        the judgement of whoever wrote them); built-in rules only propose.
+        User labels are kept unless ``overwrite_user``; the differences are
+        recorded as open conflicts.
+        """
+        doc = self._peak_doc(document_id)
+        chosen = self.scheme(scheme)
+        if not len(chosen):
+            raise InvalidRequest(
+                f"The {chosen.name} scheme has no classes: define_class first"
+            )
+        with doc.lock:
+            table, hits = doc.peaks.copy(), dict(doc.peak_hits)
+            context = {"masks": doc.masks.copy(), "grid": doc.grid}
+        new, report = apply_scheme(
+            table,
+            hits,
+            chosen,
+            only_unreviewed=only_unreviewed,
+            overwrite_user=overwrite_user,
+            spectra=self._spectra_of(doc),
+            libraries=self._library_objects(),
+            context=context,
+        )
+        with doc.lock:
+            if (
+                len(doc.peaks) != len(new)
+                or not (
+                    doc.peaks["peak_id"].to_numpy() == new["peak_id"].to_numpy()
+                ).all()
+            ):
+                raise InvalidRequest("The peak table changed meanwhile; apply again")
+            for col in LABEL_COLUMNS:
+                doc.peaks[col] = new[col].to_numpy()
+            changed = new["category_source"].str.startswith(f"rule:{chosen.name}/")
+            self._clear_conflicts(doc, new.loc[changed, "peak_id"])
+            self._add_conflicts(
+                doc, [{**c, "by": f"rule:{chosen.name}"} for c in report["conflicts"]]
+            )
+        self._peaks_changed(doc, "labels")
+        return {"scheme": chosen.name, **report}
+
+    def review_status(self, document_id: str) -> dict:
+        """
+        Review progress (spec CLS-7): peaks and volume share per status
+        (reviewed, proposed, unlabelled) and per label source, overall and
+        in the neighbourhood of each class mask, and the open conflicts.
+        """
+        doc = self._peak_doc(document_id)
+        with doc.lock:
+            table = add_label_columns(doc.peaks.copy())
+            masks = doc.masks.copy()
+            grid = doc.grid
+            conflicts = list(doc.peaks_info.get("conflicts") or [])
+        volume = table["volume"].to_numpy(float)
+        total = float(volume.sum()) or 1.0
+        reviewed = table["reviewed"].to_numpy(bool)
+        labelled = (table["category"] != "").to_numpy()
+
+        def part(sel):
+            return {
+                "n": int(sel.sum()),
+                "volume_share": round(float(volume[sel].sum()) / total, 4),
+            }
+
+        status = {
+            "reviewed": part(reviewed),
+            "proposed": part(labelled & ~reviewed),
+            "unlabelled": part(~labelled),
+        }
+        kinds = table["category_source"].map(source_kind).to_numpy()
+        sources = {k: part(kinds == k) for k in ("rule", "agent", "user")}
+        neighbourhoods = []
+        for mask in masks:
+            if mask.category in (None, "", "excluded"):
+                continue
+            try:
+                member = table[table["category"] == mask.category]
+                margins = mask_margins(mask, member, grid)
+                near = neighbourhood_raster(mask, grid, *margins)
+            except ValueError:
+                continue
+            rows, cols = peak_pixels(table, grid)
+            inside = np.zeros(len(table), dtype=bool)
+            ok = (rows >= 0) & (rows < grid.n_rt2) & (cols >= 0) & (cols < grid.n_mod)
+            inside[ok] = near[rows[ok], cols[ok]]
+            neighbourhoods.append(
+                {
+                    "mask": mask.name,
+                    "category": mask.category,
+                    "n_peaks": int(inside.sum()),
+                    "n_unreviewed": int((inside & ~reviewed).sum()),
+                    "reviewed_volume_share": round(
+                        float(volume[inside & reviewed].sum())
+                        / (float(volume[inside].sum()) or 1.0),
+                        4,
+                    ),
+                }
+            )
+        return {
+            "document_id": doc.id,
+            "n_peaks": len(table),
+            "status": status,
+            "sources": sources,
+            "masks": neighbourhoods,
+            "conflicts": conflicts,
+        }
+
+    def review_batch(
+        self,
+        document_id: str,
+        status: str = "unreviewed",
+        order: str = "rt",
+        cursor: str | None = None,
+        batch: int = 40,
+        category: str | None = None,
+        rt1_min: tuple[float, float] | None = None,
+        rt2_s: tuple[float, float] | None = None,
+        near_mask: str | None = None,
+    ) -> dict:
+        """
+        A batch of evidence cards for reviewing peaks (spec CLS-4/5).
+
+        Parameters
+        ----------
+        status : {"unreviewed", "proposed", "all"}
+        order : {"rt", "volume"}
+            Along RT1 then RT2 (homologues and isomers come together), or by
+            decreasing volume. ``cursor``/``next_cursor`` walk through the
+            peaks in this order, so every peak is visited once even when
+            labels change in between.
+        batch : int, default 40
+        category : str, optional
+            Only peaks with this label or proposal.
+        rt1_min, rt2_s : (min, max), optional
+        near_mask : str, optional
+            Only peaks inside this mask or within its margins (what the grade
+            needs, spec GRD-1).
+
+        Returns
+        -------
+        dict
+            ``cards`` (see :func:`pyGCxGC.regions.classes.review_cards`),
+            ``next_cursor`` (``None`` at the end), ``remaining`` and
+            ``progress``.
+        """
+        if status not in ("unreviewed", "proposed", "all"):
+            raise InvalidRequest("status must be 'unreviewed', 'proposed' or 'all'")
+        if order not in ("rt", "volume"):
+            raise InvalidRequest("order must be 'rt' or 'volume'")
+        batch = int(min(max(batch, 1), 200))
+        doc = self._peak_doc(document_id)
+        with doc.lock:
+            table = add_label_columns(doc.peaks.copy())
+            hits = dict(doc.peak_hits)
+            masks, grid = doc.masks.copy(), doc.grid
+        total = float(table["volume"].sum())
+        sel = np.ones(len(table), dtype=bool)
+        if status == "unreviewed":
+            sel &= ~table["reviewed"].to_numpy(bool)
+        elif status == "proposed":
+            sel &= (
+                ~table["reviewed"].to_numpy(bool) & (table["category"] != "").to_numpy()
+            )
+        if category:
+            sel &= (
+                (table["category"] == category) | (table["proposal"] == category)
+            ).to_numpy()
+        if rt1_min:
+            sel &= table["rt1_min"].between(*rt1_min).to_numpy()
+        if rt2_s:
+            sel &= table["rt2_s"].between(*rt2_s).to_numpy()
+        rows, cols = peak_pixels(table, grid)
+        ok = (rows >= 0) & (rows < grid.n_rt2) & (cols >= 0) & (cols < grid.n_mod)
+        review_masks = []
+        if near_mask:
+            review_masks = [self._mask(doc, near_mask)]
+        elif category:
+            review_masks = [m for m in masks if m.category == category]
+        flags = np.full(len(table), None, dtype=object)
+        for mask in review_masks:
+            member = (
+                table[table["category"] == mask.category] if mask.category else None
+            )
+            try:
+                inside_r = mask.rasterize(grid, "lower") > 0
+                near_r = neighbourhood_raster(
+                    mask, grid, *mask_margins(mask, member, grid)
+                )
+            except ValueError as exc:
+                raise InvalidRequest(str(exc)) from exc
+            inside = np.zeros(len(table), dtype=bool)
+            near = np.zeros(len(table), dtype=bool)
+            inside[ok] = inside_r[rows[ok], cols[ok]]
+            near[ok] = near_r[rows[ok], cols[ok]]
+            flags[near & (flags == None)] = "near"  # noqa: E711
+            flags[inside] = "in"
+        if near_mask:
+            sel &= flags != None  # noqa: E711
+        if order == "rt":
+            keys = list(
+                zip(table["rt1_min"], table["rt2_s"], table["peak_id"], strict=True)
+            )
+        else:
+            keys = list(
+                zip(-table["volume"], table["peak_id"], table["peak_id"], strict=True)
+            )
+        start = None
+        if cursor:
+            try:
+                kind, *parts = str(cursor).split("|")
+                if kind != order:
+                    raise ValueError
+                start = tuple(float(x) for x in parts)
+            except ValueError:
+                raise InvalidRequest("Invalid cursor (from another order?)") from None
+        candidates = [
+            i
+            for i in np.flatnonzero(sel)
+            if start is None or tuple(map(float, keys[i])) > start
+        ]
+        candidates.sort(key=lambda i: tuple(map(float, keys[i])))
+        chosen = candidates[:batch]
+        subset = table.iloc[chosen].copy()
+        subset.attrs["total_volume"] = total
+        flag_of = {int(table.iloc[i]["peak_id"]): flags[i] for i in chosen}
+        cards = review_cards(
+            None,
+            subset,
+            hits,
+            spectra=self._spectra_of(doc),
+            near=lambda row: flag_of.get(int(row["peak_id"])),
+        )
+        next_cursor = None
+        if len(candidates) > batch:
+            last = keys[chosen[-1]]
+            next_cursor = order + "|" + "|".join(repr(float(x)) for x in last)
+        return {
+            "document_id": doc.id,
+            "cards": cards,
+            "next_cursor": next_cursor,
+            "remaining": len(candidates) - len(chosen),
+            "progress": self.review_status(doc.id)["status"],
+        }
+
+    def peak_hits(self, document_id: str, peak_id: int, n: int = 10) -> dict:
+        """
+        The top hits of a peak (spec CLS-8) with ``delta_match``,
+        ``probability`` and the class the built-in rules give each hit.
+        """
+        doc = self._peak_doc(document_id)
+        with doc.lock:
+            rows = doc.peaks[doc.peaks["peak_id"] == int(peak_id)]
+            if not len(rows):
+                raise NotFound(f"No peak {peak_id}")
+            row = rows.iloc[0].to_dict()
+            hits = list(doc.peak_hits.get(int(peak_id)) or [])[: max(int(n), 1)]
+        builtin = ClassScheme.builtin()
+        ev = evidence(row, hits, None, self._library_objects())
+        out = []
+        for k, h in enumerate(hits):
+            d = hit_dict(h)
+            cls = next((c for c in builtin if c.rule.hit_matches(ev, k)), None)
+            d["class"] = cls.name if cls else None
+            d["subclass"] = cls.subclass_of(ev, k) if cls else None
+            rec = self.libraries.get(h.extra.get("library_id", ""))
+            d["redistributable"] = bool(rec and rec.redistributable)
+            out.append(d)
+        note = None
+        if hits and hits[0].probability is None:
+            params = self.search_parameters(doc.data.mass_range)
+            note = probability_unavailable(params.mz_power, params.int_power)
+        if not hits and doc.peaks_info.get("libraries"):
+            note = "No hits stored for this peak (re-identify the peaks to get them)"
+        return {
+            "document_id": doc.id,
+            "peak_id": int(peak_id),
+            "hits": out,
+            "probability_note": note,
+        }
+
+    # ------------------------------------------------------------ regions (spec mcp.md §6, §7)
+    def mask_from_peaks(
+        self,
+        document_id: str,
+        category: str | None = None,
+        peak_ids: list[int] | None = None,
+        method: str = "band",
+        margin_rt2_s: float | None = None,
+        margin_rt1_min: float | None = None,
+        trim: float = 0.02,
+        mask: str | None = None,
+        name: str | None = None,
+        subclass: str | None = None,
+        window_rt1_min: float | None = None,
+    ) -> dict:
+        """
+        A polygon mask around the peaks of a class (or given peaks), with the
+        report of spec REG-4. It creates a mask (name and colour from the
+        class, ``category`` set) or replaces the shapes of ``mask``, as one
+        undo step.
+
+        Returns
+        -------
+        dict
+            ``mask_id``, ``n_vertices``, ``rt1_min``/``rt2_s`` ranges, the
+            margins and ``report`` (:func:`pyGCxGC.regions.from_peaks.mask_report`).
+        """
+        doc = self._peak_doc(document_id)
+        if (category is None) == (peak_ids is None):
+            raise InvalidRequest("Give a category or peak_ids")
+        with doc.lock:
+            table = add_label_columns(doc.peaks.copy())
+            grid = doc.grid
+        if category is not None:
+            chosen = table[table["category"] == category]
+            if subclass:
+                chosen = chosen[chosen["subclass"] == subclass]
+            if not len(chosen):
+                raise InvalidRequest(
+                    f"No peaks labelled {category!r}: propose or set categories first"
+                )
+        else:
+            ids = {int(p) for p in peak_ids or []}
+            chosen = table[table["peak_id"].isin(ids)]
+            missing = ids - set(chosen["peak_id"].astype(int))
+            if missing:
+                raise NotFound(f"No peaks {sorted(missing)}")
+            cats = set(chosen["category"]) - {""}
+            category = cats.pop() if len(cats) == 1 else None
+        try:
+            new = mask_from_peaks(
+                chosen,
+                grid,
+                method,
+                margin_rt2_s,
+                margin_rt1_min,
+                trim,
+                window_rt1_min,
+                name=name or (f"{category} ({subclass})" if subclass else category),
+                category=category,
+            )
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
+        if subclass:
+            new.meta["subclass"] = subclass
+        color = self.class_color(category)
+        if mask is not None:
+            target = self._mask(doc, mask)
+
+            def fn(ms: MaskSet) -> str:
+                m = ms.get(target.id)
+                m.operations = list(new.operations)
+                m.meta = {k: v for k, v in m.meta.items() if k == "copied_from"}
+                m.meta.update(new.meta)
+                if m.category is None and category:
+                    m.category = category
+                return m.id
+
+        else:
+
+            def fn(ms: MaskSet) -> str:
+                m = ms.new_mask(new.name, color, category)
+                m.operations = list(new.operations)
+                m.meta = dict(new.meta)
+                return m.id
+
+        mask_id = self._edit_masks(doc, "from_peaks", fn)
+        with doc.lock:
+            made = doc.masks.get(mask_id).copy()
+        vertices = np.asarray(new.operations[0].shape.vertices)
+        report = mask_report(made, table, grid, category, subclass)
+        return {
+            "document_id": doc.id,
+            "mask_id": mask_id,
+            "name": made.name,
+            "n_vertices": len(vertices),
+            "rt1_min": [
+                round(float(vertices[:, 0].min()), 4),
+                round(float(vertices[:, 0].max()), 4),
+            ],
+            "rt2_s": [
+                round(float(vertices[:, 1].min()), 4),
+                round(float(vertices[:, 1].max()), 4),
+            ],
+            "margin_rt2_s": new.meta["margin_rt2_s"],
+            "margin_rt1_min": new.meta["margin_rt1_min"],
+            "report": report,
+        }
+
+    @staticmethod
+    def _run_of(doc: Document):
+        return doc.data if isinstance(doc, MSDocument) else doc.chrom
+
+    @staticmethod
+    def _alignment_key(doc: Document) -> list:
+        p = doc.params
+        return [float(p.modulation_time or 0), int(p.shift)]
+
+    def estimate_delay(
+        self, source_id: str, target_id: str, record: bool = True
+    ) -> dict:
+        """
+        Estimate the RT2 delay of ``source`` (usually the MS run) relative to
+        ``target`` (spec ALN-1). Nothing is applied: correct it with
+        ``update_document(source, shift=suggested_shift)`` before detecting
+        peaks (ALN-2). The estimate is recorded for the grade (ALN-3).
+        """
+        source, target = self.document(source_id), self.document(target_id)
+        if source is target:
+            raise InvalidRequest("Give two different documents")
+        est = estimate_delay(self._run_of(source), self._run_of(target))
+        result = {
+            "source": source.name,
+            "target": target.name,
+            "source_kind": source.kind,
+            **est.to_dict(),
+        }
+        if record:
+            with target.lock:
+                target.delay_estimates[source.id] = {
+                    "source_id": source.id,
+                    "source": source.name,
+                    "source_path": source.path,
+                    "aligned": est.aligned,
+                    "rt2_offset_s": est.rt2_offset_s,
+                    "delay_s": est.delay_s,
+                    "keys": [self._alignment_key(source), self._alignment_key(target)],
+                }
+        return result
+
+    def _delay_record(self, target: Document, source: Document | None, copied: dict):
+        records = target.delay_estimates
+        rec = records.get(source.id) if source is not None else None
+        if rec is None:
+            paths = {copied.get("path"), source.path if source is not None else None}
+            paths.discard(None)
+            rec = next(
+                (r for r in records.values() if r.get("source_path") in paths), None
+            )
+        if rec is None:
+            return None
+        current = source is not None and rec.get("keys") == [
+            self._alignment_key(source),
+            self._alignment_key(target),
+        ]
+        return {**rec, "current": current}
+
+    def mask_compatibility(
+        self, source_id: str, target_id: str, masks: list[str] | None = None
+    ) -> dict:
+        """
+        Can masks of ``source`` be used on ``target``? (spec TOOL-14)
+
+        Reports both modulation times (warning above 0.5 %) and phase shifts,
+        the remaining RT2 delay (estimated again and recorded), the RT1 and
+        RT2 ranges, the part of every mask outside the target's range and
+        its pixel counts on both runs, and the alignment assumptions.
+        """
+        source, target = self.document(source_id), self.document(target_id)
+        with source.lock:
+            chosen = (
+                [self._mask(source, m).copy() for m in masks]
+                if masks
+                else [m.copy() for m in source.masks]
+            )
+            sgrid = source.grid
+        tgrid = target.grid
+        warnings: list[str] = []
+        sp, tp = source.params, target.params
+        mod_s, mod_t = float(sp.modulation_time or 0), float(tp.modulation_time or 0)
+        if mod_t and abs(mod_s - mod_t) > 0.005 * mod_t:
+            warnings.append(
+                f"The modulation times differ by more than 0.5 % ({mod_s:g} and {mod_t:g} s)"
+            )
+        delay = self.estimate_delay(source.id, target.id)
+        half_pixel = 0.5 * max(sgrid.sampling_interval, tgrid.sampling_interval)
+        if delay["rt2_offset_s"] is None or abs(delay["rt2_offset_s"]) >= half_pixel:
+            warnings.append(
+                f"The RT2 offset between the runs is {delay['rt2_offset_s']} s, more than "
+                f"half a pixel ({half_pixel:.3g} s): correct the delay with the phase "
+                f"shift of {source.name} (shift {delay['suggested_shift']})"
+            )
+        warnings.extend(delay["warnings"])
+
+        def ranges(g: Grid) -> dict:
+            return {
+                "rt1_min": [
+                    round(g.rt1_start, 4),
+                    round(g.rt1_start + g.n_mod * g.modulation_time / 60, 4),
+                ],
+                "rt2_s": [
+                    round(g.rt2_start, 4),
+                    round(g.rt2_start + g.n_rt2 * g.sampling_interval, 4),
+                ],
+            }
+
+        rows = []
+        for m in chosen:
+            entry: dict[str, Any] = {"mask_id": m.id, "name": m.name}
+            try:
+                ws = m.rasterize(sgrid, "lower")
+                wt = m.rasterize(tgrid, "lower")
+            except ValueError as exc:
+                entry["error"] = str(exc)
+                rows.append(entry)
+                continue
+            entry["pixels_source"] = int((ws > 0).sum())
+            entry["pixels_target"] = int((wt > 0).sum())
+            r, c = np.nonzero(ws > 0)
+            x = sgrid.rt1_centres[c]
+            y = sgrid.rt2_centres[r]
+            tr = ranges(tgrid)
+            outside = (
+                (x < tr["rt1_min"][0])
+                | (x > tr["rt1_min"][1])
+                | (y < tr["rt2_s"][0])
+                | (y > tr["rt2_s"][1])
+            )
+            entry["outside_fraction"] = round(
+                float(outside.mean()) if len(x) else 0.0, 4
+            )
+            if entry["outside_fraction"] > 0:
+                warnings.append(
+                    f"{entry['outside_fraction']:.1%} of {m.name} lies outside {target.name}"
+                )
+            rows.append(entry)
+        return {
+            "source": {
+                "name": source.name,
+                "modulation_time": mod_s,
+                "shift": sp.shift,
+                **ranges(sgrid),
+            },
+            "target": {
+                "name": target.name,
+                "modulation_time": mod_t,
+                "shift": tp.shift,
+                **ranges(tgrid),
+            },
+            "delay": delay,
+            "masks": rows,
+            "warnings": warnings,
+            "assumptions": list(ALIGNMENT_ASSUMPTIONS),
+        }
+
+    # ------------------------------------------------------------ describe, render
+    def describe(self, document_id: str) -> dict:
+        """
+        What an analysis needs to know about a run, in one call (spec TOOL-10):
+        geometry and processing, the solvent cut-off and a suggestion, the
+        modulation estimate (MS), and warnings.
+        """
+        doc = self.document(document_id)
+        info = doc.info()
+        g = doc.grid
+        params = doc.params
+        warnings = list(doc.warnings)
+        out: dict[str, Any] = {
+            "id": doc.id,
+            "name": doc.name,
+            "kind": doc.kind,
+            "path": doc.path,
+            "shape": list(g.shape),
+            "rt1_min": [
+                round(g.rt1_start, 4),
+                round(g.rt1_start + g.n_mod * g.modulation_time / 60, 4),
+            ],
+            "rt2_s": [
+                round(g.rt2_start, 4),
+                round(g.rt2_start + g.n_rt2 * g.sampling_interval, 4),
+            ],
+            "modulation_time": float(params.modulation_time or 0),
+            "shift": int(params.shift),
+            "sampling_interval": g.sampling_interval,
+            "n_masks": len(doc.masks),
+        }
+        cutoff = params.solvent_cutoff
+        if isinstance(doc, MSDocument):
+            data = doc.data
+            out.update(
+                mass_range=list(data.mass_range),
+                baseline=data.baseline.describe(),
+                signal=info["value_label"]["quantity"],
+                n_peaks=0 if doc.peaks is None else len(doc.peaks),
+            )
+            with contextlib.suppress(ValueError):
+                estimate = estimate_modulation_time(data.raw)
+                out["modulation_estimate"] = estimate
+                if (
+                    abs(estimate - out["modulation_time"])
+                    > 0.01 * out["modulation_time"]
+                ):
+                    warnings.append(
+                        f"The modulation estimate ({estimate:g} s) differs from the "
+                        f"setting ({out['modulation_time']:g} s) by "
+                        f"{abs(estimate / out['modulation_time'] - 1):.0%}"
+                    )
+            suggestion = suggest_solvent_cutoff(data)
+            if cutoff is None:
+                warnings.append(
+                    "The first modulation is an injection artefact and is skipped by "
+                    "peak detection"
+                )
+            if doc.peaks is not None and len(doc.peaks):
+                rt2 = doc.peaks["rt2_s"].to_numpy(float)
+                n_edge = int(((rt2 < 1.0) | (rt2 > g.modulation_time - 1.0)).sum())
+                if n_edge:
+                    warnings.append(
+                        f"{n_edge} peaks lie within 1 s of either end of the modulation "
+                        "(check the phase shift)"
+                    )
+            saturated = int(
+                (data.raw.intensities >= np.float32(data.raw.intensities.max())).sum()
+            )
+            if saturated > 1:
+                warnings.append(
+                    f"Intensity reaches its maximum in {saturated} scans/ions"
+                )
+        else:
+            assert isinstance(doc, FIDDocument)
+            out["signal"] = info["value_label"]["quantity"]
+            out["n_peaks"] = None
+            suggestion = None
+            if doc.raw is not None:
+                suggestion = suggest_solvent_cutoff(
+                    times=doc.raw["Ret.Time[s]"].to_numpy(float),
+                    signal=doc.raw["Absolute Intensity"].to_numpy(float),
+                    modulation_time=params.modulation_time,
+                )
+            if (
+                self.settings.get("fid", {}).get("modulation_time") is None
+                and not doc.path
+            ):
+                warnings.append("No modulation time given (FID)")
+        out["solvent_cutoff"] = "not set" if cutoff is None else cutoff
+        out["solvent_cutoff_suggestion"] = suggestion
+        if cutoff is None:
+            warnings.append(
+                "Solvent cut-off not set"
+                + (f" (suggested: {suggestion} min)" if suggestion is not None else "")
+                + "; 0 means checked, none needed"
+            )
+        out["warnings"] = warnings
+        return out
+
+    def render(
+        self,
+        document_id: str,
+        rt1_min: tuple[float, float] | None = None,
+        rt2_s: tuple[float, float] | None = None,
+        signal: str | None = None,
+        mz: list[int] | None = None,
+        scale: str = "sqrt",
+        overlays=("masks", "peaks"),
+        color_peaks_by: str | None = "category",
+        peak_labels: str = "none",
+        width: int = 1024,
+        height: int = 640,
+    ) -> tuple[bytes, dict]:
+        """
+        PNG of a document with its masks and peaks, and a caption (spec RND-1…5).
+
+        ``signal``/``mz`` default to the document's current signal; the colour
+        map comes from the settings.
+        """
+        doc = self.document(document_id)
+        result = self.image(doc.id, signal, mz)
+        overlays = set(overlays or ())
+        unknown = overlays - {"masks", "peaks"}
+        if unknown:
+            raise InvalidRequest(
+                f"Unknown overlays {sorted(unknown)}; use masks, peaks"
+            )
+        with doc.lock:
+            masks = doc.masks.copy() if "masks" in overlays else None
+            peaks = None
+            if (
+                "peaks" in overlays
+                and isinstance(doc, MSDocument)
+                and doc.peaks is not None
+            ):
+                peaks = add_label_columns(doc.peaks.copy())
+        colors = {}
+        for scheme in (*map(ClassScheme.builtin, BUILTIN_SCHEMES), self.class_scheme):
+            colors.update(scheme_colors(scheme))
+        label = result.value or {}
+        try:
+            return render_chromatogram(
+                result.grid,
+                result.data,
+                rt1_min=tuple(rt1_min) if rt1_min else None,
+                rt2_s=tuple(rt2_s) if rt2_s else None,
+                scale=scale,
+                cmap=self.settings.get("display", {}).get("colormap", "viridis"),
+                masks=masks,
+                peaks=peaks,
+                color_peaks_by=None if color_peaks_by == "none" else color_peaks_by,
+                peak_labels=peak_labels,
+                category_colors=colors,
+                width=width,
+                height=height,
+                title=doc.name,
+                signal=label.get("quantity", result.signal),
+                value_label=" ".join(
+                    x
+                    for x in (
+                        label.get("quantity"),
+                        f"({label['unit']})" if label.get("unit") else "",
+                    )
+                    if x
+                ),
+            )
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
+
+    # ------------------------------------------------------------ grade (spec mcp.md §9)
+    def _find_document(self, ref: dict) -> Document | None:
+        """The document a mask was copied from: by id, path, then unique name."""
+        doc = self.documents.get(ref.get("document_id") or "")
+        if doc is not None:
+            return doc
+        for d in self.documents.values():
+            if ref.get("path") and d.path == ref["path"]:
+                return d
+        named = [d for d in self.documents.values() if d.name == ref.get("document")]
+        return named[0] if len(named) == 1 else None
+
+    def _mask_facts(self, doc: Document, mask: Mask) -> MaskFacts:
+        facts = MaskFacts(mask.name, mask.category)
+        facts.drawn_without_peaks = mask.meta.get("source") != "peaks"
+        copied = mask.meta.get("copied_from")
+        peaks_doc: Document | None = doc
+        if copied:
+            source = self._find_document(copied)
+            facts.copied_from = copied.get("document") or "another run"
+            facts.delay = self._delay_record(doc, source, copied)
+            if mask.fingerprint() != copied.get("fingerprint"):
+                facts.changes = [
+                    f"{len(mask.operations)} operations now; the shapes differ from "
+                    f"{copied.get('mask', 'the copied mask')}"
+                ]
+            peaks_doc = source
+        if not isinstance(peaks_doc, MSDocument) or peaks_doc.peaks is None:
+            return facts
+        with peaks_doc.lock:
+            table = add_label_columns(peaks_doc.peaks.copy())
+            grid = peaks_doc.grid
+            info = dict(peaks_doc.peaks_info)
+        try:
+            report = mask_report(mask, table, grid, mask.category)
+        except ValueError:
+            return facts
+        facts.peaks_document = peaks_doc.name
+        facts.n_near = report["neighbourhood"]["n_peaks"]
+        facts.n_unreviewed = report["neighbourhood"]["n_unreviewed"]
+        facts.n_peaks = report["coverage"]["n_inside"]
+        facts.sources = report["sources"]
+        facts.libraries = list(info.get("libraries") or [])
+        facts.thresholds = {
+            "peak_snr": info.get("snr"),
+            "proposal": info.get("proposal"),
+        }
+        facts.peak_table_current = not info.get("stale")
+        facts.libraries_known = all(
+            i in self.libraries and self.libraries[i].library is not None
+            for i in info.get("library_ids", [])
+        ) and len(info.get("library_ids", [])) >= len(info.get("libraries", []))
+        rows, cols = peak_pixels(table, grid)
+        raster = mask.rasterize(grid, "lower") > 0
+        ok = (rows >= 0) & (rows < grid.n_rt2) & (cols >= 0) & (cols < grid.n_mod)
+        inside = np.zeros(len(table), dtype=bool)
+        inside[ok] = raster[rows[ok], cols[ok]]
+        low = table[
+            inside
+            & (table["category_source"] == "agent").to_numpy()
+            & (table["category_confidence"] == "low").to_numpy()
+        ]
+        facts.low_confidence = [
+            {"peak_id": int(r.peak_id), "name": r.name, "category": r.category}
+            for r in low.itertuples()
+        ][:50]
+        facts.report = report  # type: ignore[attr-defined]
+        return facts
+
+    def integration_report(
+        self,
+        document_id: str,
+        masks: list[str] | None = None,
+        exclude: list[str] | None = None,
+    ) -> dict:
+        """
+        Integration with both denominators, the grade and the facts of the
+        final report (spec TOOL-15, GRD-1…3).
+
+        Parameters
+        ----------
+        masks : list of str, optional
+            Masks (ids or names) to report; default all.
+        exclude : list of str, optional
+            Masks left out of ``percent_of_included``; default the masks of
+            category ``excluded``.
+
+        Returns
+        -------
+        dict
+            ``masks`` (name, category, volume, ``percent`` of the total and
+            ``percent_of_included``, pixels), ``total``, ``included_total``,
+            ``excluded``, ``unassigned``, ``overlaps``, ``signal``, ``grade``
+            and ``report``.
+        """
+        doc = self.document(document_id)
+        integration = self.integration(doc.id)
+        with doc.lock:
+            all_masks = [m.copy() for m in doc.masks]
+        if masks:
+            wanted = [self._mask(doc, m).id for m in masks]
+            reported = [m for m in all_masks if m.id in wanted]
+        else:
+            reported = all_masks
+        if exclude is None:
+            excluded = [m for m in all_masks if m.category == "excluded"]
+        else:
+            excluded = [
+                m for m in all_masks if m.id in {self._mask(doc, e).id for e in exclude}
+            ]
+        excluded_ids = {m.id for m in excluded}
+        by_id = {r["mask_id"]: r for r in integration["masks"]}
+        total = float(integration["total"])
+        included_total = total - sum(
+            by_id[m.id]["volume"] for m in excluded if m.id in by_id
+        )
+        rows = []
+        for m in reported:
+            r = by_id.get(m.id, {})
+            rows.append(
+                {
+                    "mask_id": m.id,
+                    "name": m.name,
+                    "category": m.category,
+                    "volume": r.get("volume"),
+                    "percent": r.get("percent"),
+                    "percent_of_included": None
+                    if m.id in excluded_ids or not included_total
+                    else 100.0 * r.get("volume", 0.0) / included_total,
+                    "n_pixels": r.get("n_pixels"),
+                    "excluded": m.id in excluded_ids,
+                }
+            )
+        facts = [self._mask_facts(doc, m) for m in reported if m.id not in excluded_ids]
+        conflicts = 0
+        seen = set()
+        for f in facts:
+            pd_name = f.peaks_document
+            if pd_name and pd_name not in seen:
+                seen.add(pd_name)
+                d = next(
+                    (x for x in self.documents.values() if x.name == pd_name), None
+                )
+                if isinstance(d, MSDocument):
+                    conflicts += len(d.peaks_info.get("conflicts") or [])
+        signal = (
+            "FID"
+            if doc.kind == "fid"
+            else (
+                "TIC"
+                if doc.signal == "tic"
+                else "EIC m/z " + ", ".join(map(str, doc.mz))
+            )
+        )
+        run = RunFacts(doc.name, doc.kind, signal, doc.params.solvent_cutoff, conflicts)
+        result = grade(run, facts)
+        report = {
+            "area_percent": "Area percentages of the detector signal, not mass percentages",
+            "solvent_cutoff": "not set"
+            if run.solvent_cutoff is None
+            else run.solvent_cutoff,
+            "assumptions": list(ALIGNMENT_ASSUMPTIONS),
+            "masks": [
+                {
+                    "name": f.name,
+                    "category": f.category,
+                    "peaks_document": f.peaks_document,
+                    "n_peaks": f.n_peaks,
+                    "libraries": f.libraries,
+                    "thresholds": f.thresholds,
+                    "label_sources": f.sources,
+                    "coverage": getattr(f, "report", {}).get("coverage"),
+                    "purity": getattr(f, "report", {}).get("purity"),
+                    "drawn_without_peaks": f.drawn_without_peaks,
+                    "copied_from": f.copied_from,
+                    "delay": f.delay,
+                    "changes": f.changes,
+                    "low_confidence_agent_labels": f.low_confidence,
+                }
+                for f in facts
+            ],
+        }
+        return {
+            "document_id": doc.id,
+            "signal": signal,
+            "total": total,
+            "included_total": included_total,
+            "masks": rows,
+            "excluded": [m.name for m in excluded],
+            "unassigned": integration["unassigned"],
+            "overlaps": integration["overlaps"],
+            "grade": result["grade"],
+            "failed": result["failed"],
+            "criteria": result["criteria"],
+            "report": report,
+        }
 
     # ------------------------------------------------------------ libraries
     def add_library(
@@ -2690,6 +4168,9 @@ class Session:
                     "params": asdict(doc._params),
                     "masks": doc.masks.to_dict(),
                     "view": copy.deepcopy(doc.view),
+                    "delay_estimates": [
+                        _project_delay(r, base) for r in doc.delay_estimates.values()
+                    ],
                 }
                 if isinstance(doc, MSDocument):
                     entry.update(
@@ -2757,6 +4238,11 @@ class Session:
             tmp = path.with_name(path.name + ".tmp")
             tmp.write_text(json.dumps(project, indent=1), "utf-8")
             tmp.replace(path)
+            classes = classes_file(path)
+            if len(self.class_scheme):
+                self.class_scheme.save(classes)
+            else:
+                classes.unlink(missing_ok=True)
         except OSError as exc:
             raise InvalidRequest(f"Cannot write {path}: {exc}") from exc
         self.project_path = str(path.resolve())
@@ -2788,6 +4274,14 @@ class Session:
             if replace_all:
                 for doc_id in list(self.documents):
                     self.close_document(doc_id)
+            classes = classes_file(path)
+            if classes.is_file():
+                try:
+                    self.class_scheme = ClassScheme.load(classes)
+                except (OSError, ValueError, KeyError) as exc:
+                    job.warnings.append(f"{classes.name}: {_error_text(exc)}")
+            elif replace_all:
+                self.class_scheme = ClassScheme("project")
             library_jobs = []
             for lib in project.get("libraries", []):
                 file = _project_file(lib, base, kind="any")
@@ -2829,7 +4323,20 @@ class Session:
                 for rec in list(self.libraries.values()):
                     if rec.active != (rec.id in wanted):
                         self.set_library_active(rec.id, rec.id in wanted)
+            by_path = {d.path: d for _, d in opened if d.path}
             for entry, doc in opened:
+                for saved in entry.get("delay_estimates") or []:
+                    found = _project_file(saved, base, kind="any")
+                    source = by_path.get(str(found)) if found else None
+                    rec = {
+                        k: v
+                        for k, v in saved.items()
+                        if k not in ("path", "absolute_path")
+                    }
+                    rec["source_path"] = str(found) if found else rec.get("source_path")
+                    rec["source_id"] = source.id if source else None
+                    key = source.id if source else f"path:{rec['source_path']}"
+                    doc.delay_estimates[key] = rec
                 if not isinstance(doc, MSDocument):
                     continue
                 if entry.get("peaks"):
@@ -2880,6 +4387,7 @@ class Session:
         for doc_id in list(self.documents):
             self.close_document(doc_id)
         self.project_path = None
+        self.class_scheme = ClassScheme("project")
         self.emit("project.updated", None, change="closed", project=None)
 
     def _project_document(self, entry: dict, file: Path, job: Job) -> Document:
@@ -2918,6 +4426,11 @@ class Session:
             for i in doc.peaks_info.get("library_ids", [])
             if i in self.libraries
         ]
+        lib_paths = {r.id: r.path for r in self.libraries.values() if r.path}
+        hits = {
+            str(pid): [_hit_state(h, lib_paths) for h in peak_hits[:PROJECT_HITS]]
+            for pid, peak_hits in doc.peak_hits.items()
+        }
         return {
             "columns": [str(c) for c in doc.peaks.columns],
             "data": json.loads(doc.peaks.to_json(orient="values", double_precision=15)),
@@ -2925,6 +4438,8 @@ class Session:
             "library_paths": paths,
             # False when the data were re-processed after detection
             "positions_current": doc._peaks_data is doc.data,
+            # the evidence of labels and rules (hit metadata, no spectra)
+            "hits": hits,
         }
 
     def _restore_peaks(self, doc: MSDocument, state: dict) -> None:
@@ -2933,9 +4448,15 @@ class Session:
         paths = state.get("library_paths") or []
         by_path = {r.path: r.id for r in self.libraries.values() if r.path}
         info["library_ids"] = [by_path[p] for p in paths if p in by_path]
+        if len(table):
+            add_label_columns(table)
+        hits = {
+            int(pid): [_hit_from_state(h, by_path) for h in peak_hits]
+            for pid, peak_hits in (state.get("hits") or {}).items()
+        }
         with doc.lock:
             doc.peaks = table
-            doc.peak_hits = {}
+            doc.peak_hits = hits
             doc._peaks_data = doc.data if state.get("positions_current", True) else None
             doc.peaks_info = info
         active = {r.id for r in self.active_libraries()}
@@ -3062,6 +4583,12 @@ def detect_kind(path: str | Path) -> str:
     raise InvalidRequest(f"Unsupported file type: {path.name}")
 
 
+def classes_file(project: str | Path) -> Path:
+    """The class scheme of a project: ``<project>.classes.json`` next to it."""
+    project = Path(project)
+    return project.with_name(project.stem + CLASSES_SUFFIX)
+
+
 def is_project_file(path: str | Path) -> bool:
     """Whether ``path`` is a project file (``*.gcxgc``)."""
     return Path(path).suffix.lower() == PROJECT_SUFFIX
@@ -3117,6 +4644,46 @@ def _project_file(entry: dict, base: Path, kind: str = "file") -> Path | None:
     return None
 
 
+def _hit_state(hit: Hit, library_paths: dict[str, str]) -> list:
+    """A hit for a project: metadata and scores, never spectra."""
+    return [
+        hit.index,
+        library_paths.get(hit.extra.get("library_id", ""), ""),
+        hit.library,
+        hit.name,
+        hit.formula,
+        hit.cas,
+        hit.mw,
+        hit.nist_no,
+        round(float(hit.match), 3),
+        round(float(hit.reverse_match), 3),
+        hit.delta_match,
+        hit.probability,
+        hit.inchikey,
+    ]
+
+
+def _hit_from_state(state: list, library_ids: dict[str, str]) -> Hit:
+    index, path, library, name, formula, cas, mw, nist_no, match, rmatch = state[:10]
+    delta, prob, inchikey = [*state[10:13], None, None, ""][:3]
+    hit = Hit(
+        0, int(index), name, formula, cas, int(mw), int(nist_no), 0, match, rmatch
+    )
+    hit.library, hit.inchikey = library, inchikey or ""
+    hit.delta_match, hit.probability = delta, prob
+    if path in library_ids:
+        hit.extra["library_id"] = library_ids[path]
+    return hit
+
+
+def _project_delay(record: dict, base: Path | None) -> dict:
+    """A delay estimate for a project: the source by path."""
+    out = {k: v for k, v in record.items() if k not in ("source_id", "source_path")}
+    if record.get("source_path"):
+        out.update(_project_path(record["source_path"], base))
+    return out
+
+
 def _selection_state(selection: Selection | None) -> dict | None:
     """What re-creates a selection: the scan (or the mask) and whether it was searched."""
     if selection is None:
@@ -3170,6 +4737,13 @@ def _operation_info(op) -> dict:
     if d["shape"]["type"] == "raster":
         d["shape"] = {"type": "raster", "shape": d["shape"]["shape"]}
     return d
+
+
+def _rounded(value, digits: int = 0):
+    """``round`` that keeps ``None`` (and gives ints for 0 digits)."""
+    if value is None or value != value:
+        return None
+    return round(float(value)) if digits == 0 else round(float(value), digits)
 
 
 def _error_text(exc: Exception) -> str:

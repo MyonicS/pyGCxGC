@@ -948,6 +948,11 @@ export interface components {
             cas: string;
             /** Db No */
             db_no: number;
+            /**
+             * Delta Match
+             * @description Match minus the best match of a different compound
+             */
+            delta_match?: number | null;
             /** Formula */
             formula: string;
             /** Index */
@@ -964,6 +969,11 @@ export interface components {
             name: string;
             /** Nist No */
             nist_no: number;
+            /**
+             * Probability
+             * @description Percent, assuming the compound is in the active libraries; None for search settings without a calibration
+             */
+            probability?: number | null;
             /** Rank */
             rank: number;
             /** Reverse Match */
@@ -1302,7 +1312,10 @@ export interface components {
         };
         /** PeakEdit */
         PeakEdit: {
-            /** Category */
+            /**
+             * Category
+             * @description A user label ('' removes it)
+             */
             category?: string | null;
             /**
              * Delete
@@ -1311,9 +1324,16 @@ export interface components {
             delete: boolean;
             /**
              * Hit Rank
-             * @description Hit of the current selection
+             * @description Rank of the hit to assign
              */
             hit_rank?: number | null;
+            /**
+             * Hits
+             * @description hit_rank of the current selection's hits or the peak's own
+             * @default selection
+             * @enum {string}
+             */
+            hits: "selection" | "peak";
             /** Name */
             name?: string | null;
             /** Peak Id */
@@ -1583,6 +1603,11 @@ export interface components {
             mod_index: number;
             /** N Average */
             n_average: number;
+            /**
+             * Probability Note
+             * @description Why the hits have no probability (uncalibrated settings)
+             */
+            probability_note?: string | null;
             /** @description Set for a mask's spectrum */
             region?: components["schemas"]["RegionInfo"] | null;
             /** Rt1 */

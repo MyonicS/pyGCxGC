@@ -462,7 +462,7 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
         """Rename, assign a hit, categorise or delete peaks."""
         for e in edits:
             session.edit_peak(
-                doc_id, e.peak_id, e.name, e.hit_rank, e.delete, e.category
+                doc_id, e.peak_id, e.name, e.hit_rank, e.delete, e.category, hits=e.hits
             )
 
     # -------------------------------------------------------------- masks

@@ -31,7 +31,10 @@ export type MaskImport = Schemas['MaskImport']
 export type ExportRequest = Schemas['ExportRequest']
 export type StructureInfo = Schemas['StructureInfo']
 export type StructureData = Schemas['StructureData']
-export type PeakEdit = Omit<Schemas['PeakEdit'], 'delete'> & { delete?: boolean }
+export type PeakEdit = Omit<Schemas['PeakEdit'], 'delete' | 'hits'> & {
+  delete?: boolean
+  hits?: Schemas['PeakEdit']['hits']
+}
 export type LibraryAdd = Schemas['LibraryAdd']
 export type ProjectInfo = Schemas['ProjectInfo']
 export type ProjectSaved = Schemas['ProjectSaved']
