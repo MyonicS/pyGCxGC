@@ -104,7 +104,7 @@ log = logging.getLogger("pyGCxGC.app")
 MAX_UNDO = 200
 MAX_VIEW_BYTES = 256_000  # view state stored per document (opaque to the session)
 PROJECT_FORMAT = "pygcxgc-project"
-PROJECT_VERSION = 1
+PROJECT_VERSION = 2  # 2: "not set" solvent cut-offs, labels, class scheme
 PROJECT_SUFFIX = ".gcxgc"
 IDENTITY_COLUMNS = (
     "name",
@@ -336,7 +336,8 @@ class FIDParams:
     modulation_time: float | None = None  # s; required for FID data
     sampling_interval: float | None = None  # s; None = inferred from the data
     shift: int = 0  # data points (cyclic roll of the rows)
-    solvent_cutoff: float = 0.0  # min
+    # min; None = not set (treated as 0), 0 = checked, no cut-off (spec SOL-2)
+    solvent_cutoff: float | None = None
     baseline: str = "stridewise"  # stridewise | global | none
     normalize: str = "volume"  # volume | max | none
 
@@ -349,8 +350,12 @@ class FIDParams:
             raise InvalidRequest(f"Unknown FID baseline {self.baseline!r}")
         if self.normalize not in ("volume", "max", "none"):
             raise InvalidRequest(f"Unknown normalisation {self.normalize!r}")
-        if self.solvent_cutoff < 0:
-            raise InvalidRequest("The solvent cutoff must not be negative")
+        _check_cutoff(self.solvent_cutoff)
+
+
+def _check_cutoff(value: float | None) -> None:
+    if value is not None and value < 0:
+        raise InvalidRequest("The solvent cut-off must not be negative")
 
 
 @dataclass
@@ -363,10 +368,13 @@ class MSParams:
         default_factory=lambda: {"mode": "modulation_percentile", "percentile": 25.0}
     )
     snr: float = 3.0  # channel zeroing threshold, 0 = off
+    # min; None = not set (treated as 0), 0 = checked, no cut-off (spec SOL-2)
+    solvent_cutoff: float | None = None
 
     def validate(self) -> None:
         if self.modulation_time is not None and self.modulation_time <= 0:
             raise InvalidRequest("The modulation time must be positive")
+        _check_cutoff(self.solvent_cutoff)
         if self.snr < 0:
             raise InvalidRequest("The S/N threshold must not be negative")
         try:
@@ -569,7 +577,10 @@ class FIDDocument(Document):
             modulation_time=float(chrom.modulation_time),
             sampling_interval=float(chrom.sampling_interval) / 1000.0,
             shift=int(chrom.shift or 0),
-            solvent_cutoff=float(chrom.solvent_cutoff or 0.0),
+            # parse_2D_chromatogram's default 0 does not mean "checked"
+            solvent_cutoff=float(chrom.solvent_cutoff)
+            if chrom.solvent_cutoff
+            else None,
         )
         raw = chrom.chrom_1D[["Ret.Time[s]", "Absolute Intensity"]].copy()
         return cls(chrom, params, raw)
@@ -589,7 +600,7 @@ class FIDDocument(Document):
                 shift=params.shift,
                 baseline_type=None if params.baseline == "none" else params.baseline,
                 normalize=None if params.normalize == "none" else params.normalize,
-                solvent_cutoff=params.solvent_cutoff,
+                solvent_cutoff=params.solvent_cutoff or 0.0,
                 name=name,
             )
         except AssertionError as exc:
@@ -672,6 +683,7 @@ class MSDocument(Document):
             modulation_time=float(data.modulation_time),
             shift=int(data.shift),
             baseline=data.baseline.to_dict(),
+            solvent_cutoff=data.solvent_cutoff,
         )
         return cls(data, params)
 
@@ -685,6 +697,7 @@ class MSDocument(Document):
                 shift=params.shift,
                 name=name,
                 baseline=params.baseline,
+                solvent_cutoff=params.solvent_cutoff,
             )
         except ValueError as exc:
             raise InvalidRequest(str(exc)) from exc
@@ -1129,9 +1142,10 @@ class Session:
             else:
                 assert isinstance(doc, MSDocument)
                 data = doc.data
-                rebuild = (new.modulation_time, new.shift) != (
+                rebuild = (new.modulation_time, new.shift, new.solvent_cutoff) != (
                     data.modulation_time,
                     data.shift,
+                    data.solvent_cutoff,
                 ) or new.baseline != doc._params.baseline
                 if rebuild:
                     data = MSDocument.build(data.raw, new, doc.name)
@@ -3071,6 +3085,12 @@ def read_project(path: str | Path) -> dict:
         )
     if not isinstance(project.get("documents", []), list):
         raise InvalidRequest(f"{path.name}: invalid document list")
+    if int(project.get("version", 0)) < 2:
+        # version 1 stored 0 for a solvent cut-off that was never set (SOL-2)
+        for entry in project.get("documents", []):
+            params = entry.get("params") if isinstance(entry, dict) else None
+            if isinstance(params, dict) and not params.get("solvent_cutoff"):
+                params["solvent_cutoff"] = None
     return project
 
 

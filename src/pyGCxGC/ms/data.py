@@ -84,6 +84,12 @@ class GCxGC_MS:
         Baseline model (see :mod:`pyGCxGC.ms.baseline`), as a model, a mode
         name or ``{"mode": name, **params}``. Defaults to
         ``modulation_percentile`` with ``baseline_percentile``.
+    solvent_cutoff : float, optional
+        Solvent cut-off (min). The background-corrected signal of the scans
+        at or before it is zeroed before folding, so the TIC, EICs and
+        background-corrected spectra ignore the solvent (as
+        :func:`pyGCxGC.split_solvent` does for FID data). The baseline is
+        fitted on all scans. ``None`` (the default) and ``0`` change nothing.
 
     Attributes
     ----------
@@ -108,6 +114,7 @@ class GCxGC_MS:
         baseline_percentile: float = 25.0,
         name: str | None = None,
         baseline: BaselineModel | str | dict | None = None,
+        solvent_cutoff: float | None = None,
     ):
         self.raw = raw
         self.name = name or raw.metadata.get("source", "GCxGC-MS")
@@ -119,6 +126,14 @@ class GCxGC_MS:
             }
         self.baseline = make_baseline(baseline)
         self.sampling_interval = float(np.median(np.diff(raw.scan_times)))
+        if solvent_cutoff is not None and solvent_cutoff < 0:
+            raise ValueError("The solvent cut-off must not be negative")
+        self.solvent_cutoff = solvent_cutoff
+        self.n_solvent_scans = (
+            int(np.searchsorted(raw.scan_times, solvent_cutoff * 60.0, side="right"))
+            if solvent_cutoff
+            else 0
+        )
         self._configure(modulation_time, shift)
 
     # ------------------------------------------------------------ properties
@@ -264,6 +279,8 @@ class GCxGC_MS:
         """Fit the baseline model and compute the corrected TIC."""
         self.baseline.fit(self)
         tic = self.raw.intensities.sum(axis=1) - self.baseline.summed_baseline()
+        if self.n_solvent_scans:
+            tic[: self.n_solvent_scans] = 0.0
         self.tic_2d = self.fold(tic)
 
     def baseline_of_scans(self, scans: np.ndarray) -> np.ndarray:
@@ -307,8 +324,10 @@ class GCxGC_MS:
         lo = max(scan - half, 0)
         hi = min(lo + max(n_average, 1), self.n_scans)
         scans = np.arange(lo, hi)
+        if subtract_background:  # the solvent is zeroed
+            scans = scans[scans >= self.n_solvent_scans]
         summed = self.raw.intensities[scans].astype(np.float64).sum(axis=0)
-        if subtract_background:
+        if subtract_background and len(scans):
             model = self.baseline if baseline is None else baseline
             summed -= model.spectrum_baseline(self, scans)
             noise = model.noise_of_scans(scans)
@@ -360,6 +379,8 @@ class GCxGC_MS:
                 f"The region has shape {mask.shape}, the data {self._scan_grid.shape}"
             )
         inside = (mask > 0) & self._valid
+        if subtract_background:  # the solvent is zeroed
+            inside &= self._scan_grid >= self.n_solvent_scans
         scans = self._scan_grid[inside]
         summed = self.raw.intensities[scans].astype(np.float64).sum(axis=0)
         if subtract_background and len(scans):
@@ -419,6 +440,7 @@ class GCxGC_MS:
         signal = self.raw.intensities[:, cols].astype(np.float64).sum(axis=1)
         if subtract_background:
             signal -= self.baseline.summed_baseline(cols)
+            signal[: self.n_solvent_scans] = 0.0
         return self.fold(signal)
 
 
@@ -429,6 +451,7 @@ def read_gcxgc_ms(
     baseline_percentile: float = 25.0,
     name: str | None = None,
     baseline: BaselineModel | str | dict | None = None,
+    solvent_cutoff: float | None = None,
 ) -> GCxGC_MS:
     """
     Read a GCxGC-MS data file.
@@ -447,6 +470,8 @@ def read_gcxgc_ms(
         Name of the chromatogram, defaults to the file name.
     baseline : BaselineModel, str or dict, optional
         Baseline model (see :mod:`pyGCxGC.ms.baseline`).
+    solvent_cutoff : float, optional
+        Solvent cut-off (min, see :class:`GCxGC_MS`).
 
     Returns
     -------
@@ -466,6 +491,7 @@ def read_gcxgc_ms(
         baseline_percentile=baseline_percentile,
         name=name or Path(path).name,
         baseline=baseline,
+        solvent_cutoff=solvent_cutoff,
     )
 
 

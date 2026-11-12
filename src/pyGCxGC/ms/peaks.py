@@ -51,7 +51,9 @@ def detect_peaks(
         reported once, at its most intense modulation.
     rt1_min : float, optional
         Ignore everything before this first dimension time (min). Defaults to
-        skipping the first modulation (injection artefacts).
+        skipping the first modulation (injection artefacts) and, when the data
+        have a solvent cut-off, everything before the modulation containing
+        it.
     max_peaks : int, default 1000
         Keep only the most intense peaks.
     image : np.ndarray, optional
@@ -79,6 +81,9 @@ def detect_peaks(
         smooth > threshold
     )
     first_mod = 1 if rt1_min is None else int(np.searchsorted(data.rt1, rt1_min))
+    cutoff = getattr(data, "solvent_cutoff", None)
+    if rt1_min is None and cutoff:
+        first_mod = max(first_mod, int(np.searchsorted(data.rt1, cutoff, "right")) - 1)
     is_max[:, :first_mod] = False
     rows, cols = np.nonzero(is_max)
     heights = tic[rows, cols]

@@ -270,7 +270,7 @@ def test_project_round_trip(session, files, tmp_path):
     assert session.settings.get("recent_files")[0] == str(path)
     saved = json.loads(path.read_text())
     assert saved["format"] == "pygcxgc-project"
-    assert saved["version"] == 1
+    assert saved["version"] == 2
     assert [d["path"] for d in saved["documents"]] == [
         "../data/fid.csv",
         "../data/run.cdf",
@@ -591,3 +591,41 @@ def test_project_masks_rasterize_like_the_original(session, files, tmp_path):
             np.testing.assert_array_equal(original[name], again[name])
     finally:
         loaded.close()
+
+
+# ------------------------------------------------------------------ solvent cut-off
+def test_solvent_cutoff_not_set_survives_projects(session, files, tmp_path):
+    fid_path, cdf, _, _ = files
+    fid = session.wait(session.open_document(fid_path, modulation_time=20))[
+        "document_id"
+    ]
+    ms = session.wait(session.open_document(cdf, modulation_time=4))["document_id"]
+    assert session.document(fid).params.solvent_cutoff is None
+    assert session.document(ms).params.solvent_cutoff is None
+    session.wait(session.update_document(fid, solvent_cutoff=0))
+    session.wait(session.update_document(ms, solvent_cutoff=0.1))
+    data = session.document(ms).data
+    assert data.solvent_cutoff == 0.1
+    assert not data.tic_2d[:, 0].any()  # the first 6 s are zeroed
+    path = session.save_project(tmp_path / "cut")["path"]
+    other = new_session(tmp_path, "other")
+    try:
+        fid2, ms2 = other.wait(other.open_project(path), 60)["document_ids"]
+        assert other.document(fid2).params.solvent_cutoff == 0  # explicit 0
+        assert other.document(ms2).params.solvent_cutoff == 0.1
+    finally:
+        other.close()
+    # version 1 projects stored 0 for "not set"
+    project = json.loads(Path(path).read_text())
+    project["version"] = 1
+    old = tmp_path / "old.gcxgc"
+    old.write_text(json.dumps(project))
+    other = new_session(tmp_path, "old")
+    try:
+        fid3, ms3 = other.wait(other.open_project(old), 60)["document_ids"]
+        assert other.document(fid3).params.solvent_cutoff is None
+        assert other.document(ms3).params.solvent_cutoff == 0.1
+    finally:
+        other.close()
+    with pytest.raises(InvalidRequest, match="negative"):
+        session.update_document(ms, solvent_cutoff=-1)

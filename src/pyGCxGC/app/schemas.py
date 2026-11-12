@@ -72,13 +72,14 @@ class ProcessingParams(Model):
     Processing parameters. FID: ``modulation_time``, ``sampling_interval``,
     ``shift`` (points), ``solvent_cutoff``, ``baseline`` (stridewise, global,
     none), ``normalize``. MS: ``modulation_time``, ``shift`` (scans),
-    ``baseline`` (a model), ``snr``.
+    ``baseline`` (a model), ``snr``, ``solvent_cutoff``. A solvent cut-off
+    of 0 means "checked, none needed"; documents start with none set.
     """
 
     modulation_time: float | None = Field(None, gt=0, description="s")
     sampling_interval: float | None = Field(None, gt=0, description="s (FID)")
     shift: int | None = None
-    solvent_cutoff: float | None = Field(None, ge=0, description="min (FID)")
+    solvent_cutoff: float | None = Field(None, ge=0, description="min")
     baseline: Literal["stridewise", "global", "none"] | BaselineSpec | None = None
     normalize: Literal["volume", "max", "none"] | None = None
     snr: float | None = Field(None, ge=0, description="Channel zeroing S/N (MS)")

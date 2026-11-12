@@ -1363,7 +1363,8 @@ export interface components {
          * @description Processing parameters. FID: ``modulation_time``, ``sampling_interval``,
          *     ``shift`` (points), ``solvent_cutoff``, ``baseline`` (stridewise, global,
          *     none), ``normalize``. MS: ``modulation_time``, ``shift`` (scans),
-         *     ``baseline`` (a model), ``snr``.
+         *     ``baseline`` (a model), ``snr``, ``solvent_cutoff``. A solvent cut-off
+         *     of 0 means "checked, none needed"; documents start with none set.
          */
         ProcessingParams: {
             /** Baseline */
@@ -1389,7 +1390,7 @@ export interface components {
             snr?: number | null;
             /**
              * Solvent Cutoff
-             * @description min (FID)
+             * @description min
              */
             solvent_cutoff?: number | null;
         };

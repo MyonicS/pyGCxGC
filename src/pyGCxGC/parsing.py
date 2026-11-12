@@ -159,7 +159,7 @@ def parse_2D_chromatogram(
         )
 
     # asserting that the modulation time is an integer multiple of the sampling interval
-    assert gcgc.is_integer_multiple(modulation_time, sampling_interval), (
+    assert gcgc.is_integer_multiple(modulation_time * 1000, sampling_interval), (
         f"Sampling interval {sampling_interval} is not an integer multiple of the modulation time {modulation_time}.\
         \n Padding to account for this is not implemented"
     )

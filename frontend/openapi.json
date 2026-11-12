@@ -1765,7 +1765,7 @@
       },
       "ProcessingParams": {
         "additionalProperties": false,
-        "description": "Processing parameters. FID: ``modulation_time``, ``sampling_interval``,\n``shift`` (points), ``solvent_cutoff``, ``baseline`` (stridewise, global,\nnone), ``normalize``. MS: ``modulation_time``, ``shift`` (scans),\n``baseline`` (a model), ``snr``.",
+        "description": "Processing parameters. FID: ``modulation_time``, ``sampling_interval``,\n``shift`` (points), ``solvent_cutoff``, ``baseline`` (stridewise, global,\nnone), ``normalize``. MS: ``modulation_time``, ``shift`` (scans),\n``baseline`` (a model), ``snr``, ``solvent_cutoff``. A solvent cut-off\nof 0 means \"checked, none needed\"; documents start with none set.",
         "properties": {
           "baseline": {
             "anyOf": [
@@ -1888,7 +1888,7 @@
                 "type": "null"
               }
             ],
-            "description": "min (FID)",
+            "description": "min",
             "title": "Solvent Cutoff"
           }
         },
