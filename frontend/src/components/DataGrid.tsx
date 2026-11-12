@@ -12,11 +12,15 @@ import {
   RowStyleModule,
   TextEditorModule,
   themeQuartz,
-  TooltipModule,
   ValidationModule,
+  type ColDef,
+  type ColGroupDef,
   type GridOptions,
 } from 'ag-grid-community'
-import { AgGridReact, type AgGridReactProps } from 'ag-grid-react'
+import { AgGridReact, type AgGridReactProps, type CustomInnerHeaderProps } from 'ag-grid-react'
+import { useMemo } from 'react'
+
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 // only what the tables use (AllCommunityModule doubles the bundle); the
 // validation module reports a missing module during development
@@ -26,7 +30,6 @@ ModuleRegistry.registerModules([
   CellStyleModule,
   RowStyleModule,
   TextEditorModule,
-  TooltipModule, // headerTooltip
   ...(import.meta.env.DEV ? [ValidationModule] : []),
 ])
 
@@ -57,7 +60,33 @@ export function DataGrid<T>(props: AgGridReactProps<T>) {
     loadThemeGoogleFonts: false,
     suppressCellFocus: true,
     animateRows: false,
-    tooltipShowDelay: 400,
   }
-  return <AgGridReact<T> {...defaults} {...props} />
+  const columnDefs = useMemo(() => props.columnDefs?.map(withHeaderTooltip), [props.columnDefs])
+  return <AgGridReact<T> {...defaults} {...props} columnDefs={columnDefs} />
+}
+
+/** A header label with the app's tooltip (AG Grid's own needs its TooltipModule). */
+function HeaderLabel({ displayName, tooltip }: CustomInnerHeaderProps & { tooltip: string }) {
+  return (
+    <Tooltip delayDuration={300} disableHoverableContent>
+      <TooltipTrigger asChild>
+        <span className="truncate">{displayName}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Columns with a `headerTooltip` get {@link HeaderLabel}; sorting and resizing stay AG Grid's. */
+function withHeaderTooltip<T>(def: ColDef<T> | ColGroupDef<T>): ColDef<T> | ColGroupDef<T> {
+  if ('children' in def || !def.headerTooltip) return def
+  const { headerTooltip, ...rest } = def
+  return {
+    ...rest,
+    headerComponentParams: {
+      ...def.headerComponentParams,
+      innerHeaderComponent: HeaderLabel,
+      innerHeaderComponentParams: { tooltip: headerTooltip },
+    },
+  }
 }
