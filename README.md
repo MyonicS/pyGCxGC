@@ -47,6 +47,41 @@ pip install -e .
 
 > **Note**: The GUI functionality requires tkinter, which is included in most Python installations. If you're having issues with the GUI, ensure tkinter is installed on your system.
 
+## GC² app
+
+GC² (gc-squared) is the graphical app for FID and GCxGC-MS data: 2D view,
+masks and integration, spectra, library search and peak tables. It needs the
+`app` extra and, when installed from the repository, a build of the frontend
+(Node.js 22 or later and [pnpm](https://pnpm.io)):
+
+```bash
+pip install -e ".[app]"
+cd frontend
+pnpm install
+pnpm build        # writes src/pyGCxGC/app/static
+cd ..
+```
+
+Then start it:
+
+```bash
+gc-squared                                   # empty workspace
+gc-squared -m 20 run.csv                     # FID file with a 20 s modulation time
+gc-squared -l path/to/MSSEARCH/MAINLIB run.cdf   # GCxGC-MS file and a spectral library
+gc-squared samples.gcxgc                     # a saved project
+```
+
+`pygcxgc` and `python -m pyGCxGC.app` are the same command. The app opens in
+its own window when [pywebview](https://pywebview.flowrl.com) is installed
+(`pip install pywebview`), otherwise in the web browser (`--browser` always
+uses the browser). The terminal shows the address with its access token, and
+`Ctrl+C` stops the app. `--headless` only serves and prints the address.
+
+In a Jupyter or VS Code notebook, `gcgc.view(chrom)` opens the app below the
+cell on your notebook's objects. See
+[docs/example_docs/gui/app.md](docs/example_docs/gui/app.md) for the full
+guide.
+
 ## Documentation
 
 For a short tutorial, see the [Quickstart Notebook](docs/notebooks/Quickstart_notebook.ipynb).
