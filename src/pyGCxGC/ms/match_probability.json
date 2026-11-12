@@ -1,0 +1,19 @@
+{
+ "temperature": 11.569,
+ "mz_power": 0.5,
+ "int_power": 0.5,
+ "n_competitors": 20,
+ "library": "NIST MAINLIB (nist, 306869 spectra)",
+ "search": {
+  "mz_min": 45,
+  "mz_max": 500,
+  "n_candidates": 200
+ },
+ "queries": 3000,
+ "queries_with_true_compound_in_top20": 2962,
+ "top1_accuracy": 0.9167,
+ "expected_calibration_error": 0.0173,
+ "seed": 20261112,
+ "date": "2026-11-12",
+ "script": "scripts/calibrate_match_probability.py"
+}

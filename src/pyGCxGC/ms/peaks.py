@@ -64,8 +64,10 @@ def detect_peaks(
     -------
     pandas.DataFrame
         One row per peak with ``peak_id``, ``rt1_min``, ``rt2_s``, ``scan``,
-        ``rt2_index``, ``mod_index``, ``height``, ``volume`` and ``n_pixels``,
-        sorted by first then second dimension retention time.
+        ``rt2_index``, ``mod_index``, ``height``, ``volume``, ``n_pixels``,
+        ``snr`` (height over the TIC noise) and ``rt2_width_s`` (extent of the
+        peak's footprint in its apex modulation), sorted by first then second
+        dimension retention time.
     """
     tic = np.clip(data.tic_2d if image is None else image, 0, None)
     smooth = ndimage.gaussian_filter(tic, sigma=(1.0, 0.0))
@@ -90,7 +92,7 @@ def detect_peaks(
     order = np.argsort(-heights)[:max_peaks]
     rows, cols, heights = rows[order], cols[order], heights[order]
 
-    volumes, sizes = _blob_volumes(
+    volumes, sizes, widths = _blob_volumes(
         tic, smooth > 3 * noise, rows, cols, rt2_window, mod_window
     )
     scans = [data.scan_at(int(r), int(c)) for r, c in zip(rows, cols, strict=False)]
@@ -104,6 +106,8 @@ def detect_peaks(
             "height": heights,
             "volume": volumes,
             "n_pixels": sizes,
+            "snr": heights / noise,
+            "rt2_width_s": widths * data.sampling_interval,
         }
     )
     table = table.sort_values(["rt1_min", "rt2_s"]).reset_index(drop=True)
@@ -141,7 +145,9 @@ def identify_peaks(
     -------
     table : pandas.DataFrame
         ``peaks`` with the columns ``name``, ``match``, ``reverse_match``,
-        ``formula``, ``mw``, ``cas`` and ``nist_no`` of the best hit.
+        ``formula``, ``mw``, ``cas``, ``nist_no``, ``delta_match`` and
+        ``probability`` (percent, ``None`` without a calibration for the
+        search settings) of the best hit.
     hits : dict
         ``peak_id`` -> list of :class:`~pyGCxGC.ms.search.Hit`.
     """
@@ -167,16 +173,29 @@ def identify_peaks(
     table["mw"] = [h.mw if h else 0 for h in best]
     table["cas"] = [h.cas if h else "" for h in best]
     table["nist_no"] = [h.nist_no if h else 0 for h in best]
+    table["delta_match"] = [
+        round(h.delta_match) if h and h.delta_match is not None else None for h in best
+    ]
+    table["probability"] = [
+        round(h.probability, 1) if h and h.probability is not None else None
+        for h in best
+    ]
     hits = dict(zip(table["peak_id"].tolist(), results, strict=False))
     return table, hits
 
 
 def _blob_volumes(tic, mask, rows, cols, rt2_scale, mod_scale):
-    """Volume of each peak: pixels of its region assigned to the nearest apex."""
+    """
+    Volume of each peak: pixels of its region assigned to the nearest apex.
+
+    Also returns the number of pixels and the number of pixels in the apex
+    modulation (the footprint's extent along RT2).
+    """
     volumes = np.zeros(len(rows))
     sizes = np.zeros(len(rows), dtype=np.int64)
+    widths = np.ones(len(rows), dtype=np.int64)
     if len(rows) == 0:
-        return volumes, sizes
+        return volumes, sizes, widths
     labels, _ = ndimage.label(mask)
     peak_labels = labels[rows, cols]
     objects = ndimage.find_objects(labels)
@@ -200,7 +219,9 @@ def _blob_volumes(tic, mask, rows, cols, rt2_scale, mod_scale):
             owner = np.argmin(d, axis=1)
         volumes[members] = np.bincount(owner, weights=values, minlength=len(members))
         sizes[members] = np.bincount(owner, minlength=len(members))
-    return volumes, sizes
+        apex_col = pc == cols[members][owner]
+        widths[members] = np.bincount(owner[apex_col], minlength=len(members))
+    return volumes, sizes, widths
 
 
 def _empty_peak_table() -> pd.DataFrame:
@@ -214,5 +235,7 @@ def _empty_peak_table() -> pd.DataFrame:
         "height",
         "volume",
         "n_pixels",
+        "snr",
+        "rt2_width_s",
     ]
     return pd.DataFrame({c: [] for c in cols})

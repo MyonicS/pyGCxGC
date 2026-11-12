@@ -18,11 +18,32 @@ robust against co-eluting compounds and background ions.
 All library spectra are first compared with a vectorised (sparse matrix)
 cosine prescreen; the full composite scores are only computed for the best
 candidates.
+
+Match probability
+-----------------
+A match factor is a similarity, not a confidence: two isomers with
+near-identical spectra can both score 900. Every hit therefore also gets
+(:func:`annotate_hits`, spec MPR-1…6):
+
+* ``delta_match``: its match minus the best match of a *different* compound
+  in the hit list (for the top hit: its lead over the nearest competitor);
+* ``probability`` (percent): the probability that the hit is the right
+  compound, **assuming the compound is in the searched libraries**. It is a
+  softmax over the distinct compounds among the top 20 hits,
+  ``p_c ∝ exp(match_c / T)``, as NIST MS Search's "Prob %" (Stein, J. Am. Soc.
+  Mass Spectrom. 1994, 5, 316). The temperature ``T`` is fitted by
+  ``scripts/calibrate_match_probability.py`` for the default peak weighting
+  and stored in ``match_probability.json``; with other weighting exponents
+  the probability is ``None`` (:func:`probability_unavailable` says why).
 """
 
 from __future__ import annotations
 
+import functools
+import json
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -81,6 +102,9 @@ class Hit:
     reverse_match: float
     library: str = ""
     extra: dict = field(default_factory=dict)
+    inchikey: str = ""  # compound identity (spec MPR-2), not in as_dict
+    delta_match: float | None = None
+    probability: float | None = None  # percent; None without a calibration
 
     def as_dict(self) -> dict:
         """Hit as a flat dictionary (for tables)."""
@@ -95,6 +119,12 @@ class Hit:
             "nist_no": self.nist_no,
             "db_no": self.db_no,
             "library": self.library,
+            "delta_match": None
+            if self.delta_match is None
+            else round(self.delta_match),
+            "probability": None
+            if self.probability is None
+            else round(self.probability, 1),
         }
 
 
@@ -268,7 +298,9 @@ def _score_candidates(mz_u, int_u, cand, library: SpectralLibrary, params) -> li
     key = 1 if params.sort_by == "reverse" else 0
     scored.sort(key=lambda s: (s[key], s[1 - key]), reverse=True)
     hits = []
-    for rank, (mf, rmf, idx) in enumerate(scored[: params.n_hits], start=1):
+    # the probability needs the top N_COMPETITORS hits, whatever n_hits is
+    keep = max(params.n_hits, N_COMPETITORS)
+    for rank, (mf, rmf, idx) in enumerate(scored[:keep], start=1):
         hits.append(
             Hit(
                 rank=rank,
@@ -282,9 +314,11 @@ def _score_candidates(mz_u, int_u, cand, library: SpectralLibrary, params) -> li
                 match=mf,
                 reverse_match=rmf,
                 library=library.name,
+                inchikey=library.structure_ids(idx)[1],
             )
         )
-    return hits
+    annotate_hits(hits, params.mz_power, params.int_power)
+    return hits[: params.n_hits]
 
 
 def _top_k(values: np.ndarray, k: int) -> np.ndarray:
@@ -293,3 +327,135 @@ def _top_k(values: np.ndarray, k: int) -> np.ndarray:
         return np.zeros(0, dtype=np.int64)
     idx = np.argpartition(values, -k)[-k:]
     return idx[values[idx] > 0]
+
+
+# ------------------------------------------------------------ probability
+N_COMPETITORS = 20  # hits that compete for the probability (spec MPR-3)
+CALIBRATION_FILE = Path(__file__).with_name("match_probability.json")
+_CAS_RE = re.compile(r"^0*(\d+)-(\d\d)-(\d)$")
+
+
+@functools.cache
+def match_calibration() -> dict | None:
+    """
+    The fitted parameters of the match probability (``match_probability.json``).
+
+    Returns ``None`` when the file is missing. Keys: ``temperature``,
+    ``mz_power``, ``int_power`` and the provenance of the fit (library,
+    search settings, date).
+    """
+    try:
+        return json.loads(CALIBRATION_FILE.read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def probability_unavailable(mz_power: float, int_power: float) -> str | None:
+    """
+    Why no probability can be computed for these weighting exponents, or
+    ``None`` when it can (spec MPR-5).
+    """
+    cal = match_calibration()
+    if cal is None:
+        return "The match probability is not calibrated (match_probability.json)"
+    if (float(mz_power), float(int_power)) != (cal["mz_power"], cal["int_power"]):
+        return (
+            f"The match probability is calibrated for the weighting "
+            f"(m/z)^{cal['mz_power']:g}·I^{cal['int_power']:g} only; the search "
+            f"uses (m/z)^{mz_power:g}·I^{int_power:g}"
+        )
+    return None
+
+
+def _cas_key(cas: str) -> str:
+    m = _CAS_RE.match(str(cas).strip())
+    return "-".join(m.groups()) if m and m.group(1) != "0" else ""
+
+
+def _name_key(name: str) -> str:
+    return " ".join(str(name).lower().split())
+
+
+def same_compound(a: Hit, b: Hit) -> bool:
+    """
+    Whether two hits are the same compound (spec MPR-2).
+
+    Equal CAS numbers mean the same compound (replicate spectra). Otherwise
+    InChIKeys decide when both hits have one, but equal keys with different
+    CAS numbers are stereoisomers (NIST structures carry no stereo), which
+    stay separate. Without identifiers, the normalised names decide.
+    """
+    cas_a, cas_b = _cas_key(a.cas), _cas_key(b.cas)
+    if cas_a and cas_a == cas_b:
+        return True
+    if a.inchikey and b.inchikey:
+        return a.inchikey == b.inchikey and not (cas_a and cas_b)
+    if cas_a and cas_b:
+        return False
+    return _name_key(a.name) == _name_key(b.name) != ""
+
+
+def compound_groups(hits: list[Hit]) -> list[int]:
+    """Group number of every hit; hits of the same compound share it."""
+    group = list(range(len(hits)))
+
+    def root(i: int) -> int:
+        while group[i] != i:
+            group[i] = group[group[i]]
+            i = group[i]
+        return i
+
+    for i in range(len(hits)):
+        for j in range(i):
+            if root(i) != root(j) and same_compound(hits[i], hits[j]):
+                group[root(i)] = root(j)
+    return [root(i) for i in range(len(hits))]
+
+
+def compound_probabilities(matches, temperature: float) -> np.ndarray:
+    """Softmax of the best match per compound (percent), ``p ∝ exp(m / T)``."""
+    m = np.asarray(matches, dtype=np.float64)
+    if not len(m):
+        return m
+    z = np.exp((m - m.max()) / temperature)
+    return 100.0 * z / z.sum()
+
+
+def annotate_hits(hits: list[Hit], mz_power: float = 0.5, int_power: float = 0.5):
+    """
+    Set ``delta_match`` and ``probability`` of a hit list (in place).
+
+    The list must be sorted by match and hold the top hits of the search
+    (at least :data:`N_COMPETITORS` when there are that many), before it is
+    cut to the number of hits shown. Every hit of a compound (replicate
+    spectra) gets the compound's probability, so the probabilities of the
+    distinct compounds sum to 100 %.
+
+    Returns
+    -------
+    list of Hit
+        ``hits``.
+    """
+    top = hits[:N_COMPETITORS]
+    groups = compound_groups(top)
+    best: dict[int, float] = {}
+    for g, h in zip(groups, top, strict=True):
+        best[g] = max(best.get(g, -np.inf), float(h.match))
+    for g, h in zip(groups, top, strict=True):
+        others = [m for k, m in best.items() if k != g]
+        h.delta_match = float(h.match) - (max(others) if others else 0.0)
+    cal = match_calibration()
+    reason = probability_unavailable(mz_power, int_power)
+    if reason is None and cal is not None:
+        keys = list(best)
+        p = compound_probabilities([best[k] for k in keys], cal["temperature"])
+        prob = dict(zip(keys, p.tolist(), strict=True))
+        for g, h in zip(groups, top, strict=True):
+            h.probability = prob[g]
+    else:
+        for h in top:
+            h.probability = None
+    for h in hits[N_COMPETITORS:]:  # outside the competition
+        h.delta_match = None
+        h.probability = None
+    return hits

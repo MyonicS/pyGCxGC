@@ -341,7 +341,7 @@ def suggest_solvent_cutoff(
     suggestion is the first minimum after it; otherwise there is none. The
     prominence condition keeps runs without a solvent peak, whose early
     compounds can form the maximum, from getting a cut-off through their
-    peaks (see ``docs/research/solvent-cutoff.md``).
+    peaks (see ``docs/research/delay-and-solvent.md``).
 
     Parameters
     ----------

@@ -489,9 +489,14 @@ def write_fid_csv(frame, path: str | Path) -> Path:
     path = Path(path)
     t = frame["Ret.Time[s]"].to_numpy()
     y = frame["Absolute Intensity"].to_numpy()
-    lines = ["RT(milliseconds),RT(minutes) - NOT USED BY IMPORT,RI,TIC"]
+    # parse_csv skips the first line and reads the second as the header
+    lines = [
+        "RT(milliseconds),RT(minutes) - NOT USED BY IMPORT,RI,TIC",
+        "0,0.0,0.0,0.0",
+    ]
     lines += [
-        f"{round(a * 1000)},{a / 60.0!r},0.0,{b!r}" for a, b in zip(t, y, strict=True)
+        f"{round(a * 1000)},{float(a) / 60.0!r},0.0,{float(b)!r}"
+        for a, b in zip(t, y, strict=True)
     ]
     path.write_text("\n".join(lines) + "\n")
     return path

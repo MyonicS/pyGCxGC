@@ -118,7 +118,7 @@ def add_split(
         The modified DataFrame with an additional column 'split_no_fromindex' that
         indicates the split segment number for each row.
     """
-    rows_splitting = modulation_time / sampling_interval * 1000
+    rows_splitting = round(modulation_time / sampling_interval * 1000)
     df["split_no_fromindex"] = df.index // rows_splitting
     while len(df[df["split_no_fromindex"] == df["split_no_fromindex"].max()]) < len(
         df[df["split_no_fromindex"] == df["split_no_fromindex"].min()]

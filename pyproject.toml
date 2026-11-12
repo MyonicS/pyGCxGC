@@ -67,7 +67,7 @@ pygcxgc-maskcreator = "pyGCxGC.mask_gui:main"
 pygcxgc-msviewer = "pyGCxGC.gui.ms_viewer:main"
 
 [tool.setuptools.package-data]
-pyGCxGC = ["py.typed", "app/static/**/*"]
+pyGCxGC = ["py.typed", "app/static/**/*", "ms/*.json", "regions/schemes/*.json"]
 
 [tool.pyright]
 include = ["pyGCxGC"]

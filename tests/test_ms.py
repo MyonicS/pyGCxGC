@@ -798,3 +798,102 @@ def test_load_library_stores_origin(tmp_path):
     lib = load_library(msp, cache_dir=cache, origin="mona")
     assert (lib.origin, lib.redistributable) == ("mona", True)
     assert load_library(msp, cache_dir=cache).origin == "mona"
+
+
+# ------------------------------------------------------------------ match probability
+CALIBRATION = {"temperature": 10.0, "mz_power": 0.5, "int_power": 0.5}
+
+
+@pytest.fixture
+def calibrated(monkeypatch):
+    import pyGCxGC.ms.search as search_mod
+
+    monkeypatch.setattr(search_mod, "match_calibration", lambda: CALIBRATION)
+    return CALIBRATION
+
+
+def _hit(name, match, cas="", inchikey="", rank=1):
+    from pyGCxGC.ms.search import Hit
+
+    h = Hit(rank, 0, name, "", cas, 0, 0, 0, float(match), float(match))
+    h.inchikey = inchikey
+    return h
+
+
+def test_compound_identity():
+    from pyGCxGC.ms.search import same_compound
+
+    key = "YXFVVABEGXRONW-UHFFFAOYSA-N"
+    assert same_compound(
+        _hit("Toluene", 900, "108-88-3"), _hit("toluene ", 800, "108-88-3")
+    )
+    assert same_compound(_hit("a", 1, inchikey=key), _hit("b", 1, inchikey=key))
+    # equal (stereo-free) keys with different CAS numbers: stereoisomers
+    assert not same_compound(
+        _hit("cis", 1, "1-00-0", key), _hit("trans", 1, "2-00-0", key)
+    )
+    assert not same_compound(_hit("a", 1, inchikey=key), _hit("a", 1, inchikey="X-Y-N"))
+    assert same_compound(_hit("2-Methylnonane", 1), _hit("2-methylnonane", 1))
+    assert not same_compound(_hit("", 1), _hit("", 1))
+    assert not same_compound(_hit("x", 1, "0-00-0"), _hit("y", 1, "0-00-0"))
+
+
+def test_annotate_hits(calibrated):
+    from pyGCxGC.ms.search import annotate_hits
+
+    hits = [
+        _hit("A", 950, "1-00-1"),
+        _hit("A", 940, "1-00-1"),  # replicate: shares A's probability
+        _hit("B", 930, "2-00-2"),
+        _hit("C", 700, "3-00-3"),
+    ]
+    annotate_hits(hits)
+    assert [h.delta_match for h in hits] == [20, 10, -20, -250]
+    assert hits[0].probability == hits[1].probability
+    assert hits[0].probability + hits[2].probability + hits[3].probability == (
+        pytest.approx(100)
+    )
+    expected = 100 / (1 + np.exp(-20 / 10) + np.exp(-250 / 10))
+    assert hits[0].probability == pytest.approx(expected)
+    # other weighting exponents: no probability, and the reason
+    from pyGCxGC.ms.search import probability_unavailable
+
+    annotate_hits(hits, mz_power=3.0, int_power=0.6)
+    assert all(h.probability is None for h in hits)
+    assert hits[0].delta_match == 20
+    assert "calibrated" in probability_unavailable(3.0, 0.6)
+    assert probability_unavailable(0.5, 0.5) is None
+
+
+def test_search_probabilities(calibrated):
+    lib = _lib_from_dict()
+    mz, inten = (np.array(list(SPECTRA["Toluene"][0]), float),) * 2
+    inten = np.array(list(SPECTRA["Toluene"][0].values()), float)
+    hits = search_spectrum(mz, inten, lib, n_hits=3)
+    assert hits[0].name == "Toluene"
+    assert hits[0].probability > 99
+    assert hits[0].delta_match > 300
+    # two different compounds with identical spectra share the probability
+    spectra = {**SPECTRA, "Toluene-d0 isomer": SPECTRA["Toluene"]}
+    twin = _lib_from_dict(spectra)
+    twin.cas[-1] = "999-99-9"
+    hits = search_spectrum(mz, inten, twin, n_hits=3)
+    assert hits[0].probability == pytest.approx(50, abs=1)
+    assert hits[1].probability == pytest.approx(50, abs=1)
+    assert abs(hits[0].delta_match) < 1
+    assert hits[0].as_dict()["probability"] == pytest.approx(50, abs=1)
+    # the list is cut to n_hits after the probabilities are computed
+    assert len(search_spectrum(mz, inten, twin, n_hits=1)) == 1
+
+
+def test_calibration_file_is_valid():
+    from pyGCxGC.ms.search import CALIBRATION_FILE, match_calibration
+
+    if not CALIBRATION_FILE.exists():
+        pytest.skip("not calibrated yet")
+    cal = match_calibration()
+    assert cal["temperature"] > 0
+    assert (cal["mz_power"], cal["int_power"]) == (0.5, 0.5)
+    text = CALIBRATION_FILE.read_text()
+    assert "Name:" not in text
+    assert "Num Peaks" not in text

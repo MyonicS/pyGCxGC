@@ -1,0 +1,290 @@
+{
+ "format": "pygcxgc-classes",
+ "version": 1,
+ "name": "hydrocarbon-group-type",
+ "description": "Hydrocarbon group types (spec CLS-13). Heteroatom classes come first, so phenols are oxygenates and thiophenes n_s_compounds. Proposals only: a match-weighted vote of the top 5 hits with match >= 700; a class is proposed with >= 60 % of the vote. Hits without a structure use the formula fallback and count half.",
+ "vote": {
+  "top_k": 5,
+  "min_match": 700,
+  "min_share": 0.6
+ },
+ "classes": [
+  {
+   "name": "silicon",
+   "color": "#795548",
+   "description": "Contains Si (column bleed, TMS derivatives)",
+   "rules": [
+    {
+     "formula": {
+      "contains_any": [
+       "Si"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "halogenated",
+   "color": "#00897b",
+   "description": "Contains F, Cl, Br or I",
+   "rules": [
+    {
+     "formula": {
+      "contains_any": [
+       "F",
+       "Cl",
+       "Br",
+       "I"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "n_s_compounds",
+   "color": "#aa00ff",
+   "description": "Contains N or S (thiophenes, pyridines, ...)",
+   "rules": [
+    {
+     "formula": {
+      "contains_any": [
+       "N",
+       "S"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "oxygenates",
+   "color": "#ff1744",
+   "description": "Contains O (phenols, ketones, acids, ...)",
+   "rules": [
+    {
+     "formula": {
+      "contains_any": [
+       "O"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "name": "polyaromatics",
+   "color": "#ff4081",
+   "description": "Three or more aromatic carbocycles",
+   "rules": [
+    {
+     "aromatic_carbocycles": [
+      3,
+      null
+     ]
+    }
+   ]
+  },
+  {
+   "name": "diaromatics",
+   "color": "#ffd600",
+   "description": "Two aromatic carbocycles (naphthalenes, biphenyls)",
+   "rules": [
+    {
+     "aromatic_carbocycles": [
+      2,
+      2
+     ]
+    }
+   ],
+   "fallback": [
+    {
+     "formula": {
+      "only": [
+       "C",
+       "H"
+      ],
+      "dbe": [
+       7,
+       9
+      ],
+      "c": [
+       10,
+       null
+      ]
+     }
+    }
+   ],
+   "ions": [
+    128,
+    142,
+    154,
+    156
+   ]
+  },
+  {
+   "name": "monoaromatics",
+   "color": "#ff9100",
+   "description": "One aromatic carbocycle; subclasses alkylbenzenes, alkenylbenzenes (styrenes), naphthenobenzenes (indanes, tetralins, indenes)",
+   "rules": [
+    {
+     "aromatic_carbocycles": [
+      1,
+      1
+     ]
+    }
+   ],
+   "fallback": [
+    {
+     "formula": {
+      "only": [
+       "C",
+       "H"
+      ],
+      "dbe": [
+       4,
+       6
+      ],
+      "c": [
+       6,
+       null
+      ]
+     }
+    }
+   ],
+   "subclasses": [
+    {
+     "name": "naphthenobenzenes",
+     "rules": [
+      {
+       "smarts": "[c;R2]"
+      }
+     ]
+    },
+    {
+     "name": "alkenylbenzenes",
+     "rules": [
+      {
+       "smarts": "C=,#C"
+      }
+     ]
+    },
+    {
+     "name": "alkylbenzenes",
+     "rules": []
+    }
+   ],
+   "ions": [
+    91,
+    105,
+    119,
+    133
+   ]
+  },
+  {
+   "name": "alkenes",
+   "color": "#00c853",
+   "description": "Non-aromatic C=C or C#C",
+   "rules": [
+    {
+     "smarts": "C=,#C"
+    }
+   ]
+  },
+  {
+   "name": "cycloalkanes",
+   "color": "#2962ff",
+   "description": "Saturated, at least one ring",
+   "rules": [
+    {
+     "rings": [
+      1,
+      null
+     ]
+    },
+    {
+     "not_smarts": "C=,#C"
+    }
+   ]
+  },
+  {
+   "name": "n_alkanes",
+   "color": "#00e5ff",
+   "description": "Saturated, acyclic, unbranched",
+   "rules": [
+    {
+     "rings": [
+      0,
+      0
+     ]
+    },
+    {
+     "not_smarts": "C=,#C"
+    },
+    {
+     "not_smarts": "[CX4]([#6])([#6])[#6]"
+    }
+   ],
+   "fallback": [
+    {
+     "formula": {
+      "only": [
+       "C",
+       "H"
+      ],
+      "dbe": [
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "hit_name": "^(n-)?(?!iso|neo|cyclo)[a-z]+ane$"
+    }
+   ],
+   "ions": [
+    57,
+    71,
+    85
+   ]
+  },
+  {
+   "name": "isoalkanes",
+   "color": "#82b1ff",
+   "description": "Saturated, acyclic, branched",
+   "rules": [
+    {
+     "rings": [
+      0,
+      0
+     ]
+    },
+    {
+     "not_smarts": "C=,#C"
+    }
+   ],
+   "fallback": [
+    {
+     "formula": {
+      "only": [
+       "C",
+       "H"
+      ],
+      "dbe": [
+       0,
+       0
+      ]
+     }
+    }
+   ],
+   "ions": [
+    57,
+    71,
+    85
+   ]
+  },
+  {
+   "name": "excluded",
+   "color": "#9e9e9e",
+   "description": "Exclusion masks (column bleed, solvent tail); never assigned by rules",
+   "rules": []
+  }
+ ]
+}

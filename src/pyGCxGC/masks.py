@@ -45,7 +45,9 @@ Examples
 from __future__ import annotations
 
 import base64
+import copy
 import functools
+import hashlib
 import itertools
 import json
 import uuid
@@ -451,6 +453,10 @@ class Mask:
     operations : list of Operation
     id : str
         Stable identifier.
+    meta : dict
+        JSON-friendly notes about the mask, e.g. how it was made from peaks
+        (``source``, ``margin_rt2_s``, ``margin_rt1_min``) or where it was
+        copied from (``copied_from``). Saved only when not empty.
     """
 
     name: str
@@ -459,6 +465,7 @@ class Mask:
     category: str | None = None
     operations: list[Operation] = field(default_factory=list)
     id: str = field(default_factory=_new_id)
+    meta: dict = field(default_factory=dict)
 
     def add(self, shape: Shape, mode: str = "add") -> Operation:
         """Append an operation and return it."""
@@ -529,10 +536,17 @@ class Mask:
             category=self.category,
             operations=list(self.operations),
             id=_new_id() if new_id else self.id,
+            meta=copy.deepcopy(self.meta),
         )
 
+    def fingerprint(self) -> str:
+        """Hash of the operations (shapes and modes), e.g. to detect edits."""
+        ops = [{"mode": o.mode, "shape": o.shape.to_dict()} for o in self.operations]
+        text = json.dumps(ops, sort_keys=True)
+        return hashlib.sha1(text.encode()).hexdigest()[:16]
+
     def to_dict(self) -> dict:
-        return {
+        d = {
             "id": self.id,
             "name": self.name,
             "color": self.color,
@@ -540,6 +554,9 @@ class Mask:
             "category": self.category,
             "operations": [op.to_dict() for op in self.operations],
         }
+        if self.meta:
+            d["meta"] = copy.deepcopy(self.meta)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> Mask:
@@ -550,6 +567,7 @@ class Mask:
             category=d.get("category"),
             operations=[Operation.from_dict(o) for o in d.get("operations", [])],
             id=d.get("id") or _new_id(),
+            meta=dict(d.get("meta") or {}),
         )
 
 
