@@ -11,6 +11,7 @@ import { useMemo } from 'react'
 import type { DocumentInfo, HitInfo } from '@/api/types'
 import { DataGrid } from '@/components/DataGrid'
 import { Button } from '@/components/ui/button'
+import { MATCH_TOOLTIP, REVERSE_MATCH_TOOLTIP } from '@/ms/columns'
 import { showPanel } from '@/shell/Workspace'
 import { editPeak, selectHit, useSelectedHit, useSelectedPeakId } from '@/store/ms'
 import { useActiveDocument, useSession } from '@/store/session'
@@ -23,6 +24,7 @@ const columns: ColDef<HitInfo>[] = [
   {
     field: 'match',
     headerName: 'Match',
+    headerTooltip: MATCH_TOOLTIP,
     width: 74,
     type: 'rightAligned',
     cellClass: num,
@@ -31,6 +33,7 @@ const columns: ColDef<HitInfo>[] = [
   {
     field: 'reverse_match',
     headerName: 'R.match',
+    headerTooltip: REVERSE_MATCH_TOOLTIP,
     width: 80,
     type: 'rightAligned',
     cellClass: num,

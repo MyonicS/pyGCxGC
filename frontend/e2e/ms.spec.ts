@@ -83,6 +83,12 @@ test('click → spectrum → hits → match → structure', async ({ page, reque
   await page.mouse.move(0, 0)
   await expect(page).toHaveScreenshot('ms-search.png')
 
+  // the score columns explain themselves on hover
+  await hits.getByRole('columnheader', { name: 'Match', exact: true }).hover()
+  await expect(page.getByRole('tooltip')).toContainText('Match factor (0–1000)')
+  await page.mouse.move(0, 0)
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+
   // hovering a stick shows m/z and intensity
   const plot = page.getByTestId('spectrum-plot')
   const label = (await plot.locator('text', { hasText: /^91$/ }).boundingBox())!

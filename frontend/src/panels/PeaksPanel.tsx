@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { MATCH_TOOLTIP, REVERSE_MATCH_TOOLTIP } from '@/ms/columns'
 import { formatValue } from '@/lib/ticks'
 import {
   detectPeaks,
@@ -65,9 +66,7 @@ const columns: ColDef<PeakRow>[] = [
   {
     field: 'match',
     headerName: 'Match',
-    headerTooltip:
-      'Match factor (0–1000): similarity of the whole measured spectrum to the library ' +
-      'spectrum. Extra ions, e.g. from co-elution or background, lower it.',
+    headerTooltip: MATCH_TOOLTIP,
     width: 72,
     type: 'rightAligned',
     cellClass: num,
@@ -76,9 +75,7 @@ const columns: ColDef<PeakRow>[] = [
   {
     field: 'reverse_match',
     headerName: 'R.match',
-    headerTooltip:
-      'Reverse match factor (0–1000): compares only the m/z values of the library ' +
-      'spectrum and ignores other ions, so co-elution and background lower it less.',
+    headerTooltip: REVERSE_MATCH_TOOLTIP,
     width: 78,
     type: 'rightAligned',
     cellClass: num,
