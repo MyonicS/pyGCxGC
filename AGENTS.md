@@ -297,8 +297,8 @@ files you change, and do not reformat untouched legacy code.
   project sees the "Fetch from PubChem?" prompt.
 * AG Grid: sorting needs no module in v36 (there is no exported
   `SortModule`); `rowClassRules` needs `RowStyleModule`, editable cells
-  `TextEditorModule`, `tooltipField`/`headerTooltip` the `TooltipModule` (not
-  registered). The current row (selected hit or peak) is styled with
+  `TextEditorModule`, `tooltipField`/`headerTooltip` the `TooltipModule` (registered;
+  the peak table's Match and R.match headers use it). The current row (selected hit or peak) is styled with
   `.row-current` in `index.css`.
 * Playwright `--update-snapshots` only rewrites failing screenshots; use
   `--update-snapshots=all` after intended UI changes. The e2e tests call

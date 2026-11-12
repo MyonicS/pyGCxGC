@@ -65,6 +65,9 @@ const columns: ColDef<PeakRow>[] = [
   {
     field: 'match',
     headerName: 'Match',
+    headerTooltip:
+      'Match factor (0–1000): similarity of the whole measured spectrum to the library ' +
+      'spectrum. Extra ions, e.g. from co-elution or background, lower it.',
     width: 72,
     type: 'rightAligned',
     cellClass: num,
@@ -73,6 +76,9 @@ const columns: ColDef<PeakRow>[] = [
   {
     field: 'reverse_match',
     headerName: 'R.match',
+    headerTooltip:
+      'Reverse match factor (0–1000): compares only the m/z values of the library ' +
+      'spectrum and ignores other ions, so co-elution and background lower it less.',
     width: 78,
     type: 'rightAligned',
     cellClass: num,

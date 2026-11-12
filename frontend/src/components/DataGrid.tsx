@@ -12,6 +12,7 @@ import {
   RowStyleModule,
   TextEditorModule,
   themeQuartz,
+  TooltipModule,
   ValidationModule,
   type GridOptions,
 } from 'ag-grid-community'
@@ -25,6 +26,7 @@ ModuleRegistry.registerModules([
   CellStyleModule,
   RowStyleModule,
   TextEditorModule,
+  TooltipModule, // headerTooltip
   ...(import.meta.env.DEV ? [ValidationModule] : []),
 ])
 
@@ -55,6 +57,7 @@ export function DataGrid<T>(props: AgGridReactProps<T>) {
     loadThemeGoogleFonts: false,
     suppressCellFocus: true,
     animateRows: false,
+    tooltipShowDelay: 400,
   }
   return <AgGridReact<T> {...defaults} {...props} />
 }

@@ -203,6 +203,12 @@ test('EIC, peaks, assign and rename, export', async ({ page, request }) => {
   const toluene = table.rows.find((r) => r.name === 'Toluene')!
   expect(toluene).toBeTruthy()
 
+  // the score columns explain themselves on hover
+  await panel.getByRole('columnheader', { name: 'R.match' }).hover()
+  await expect(page.getByRole('tooltip')).toContainText('Reverse match factor')
+  await panel.getByLabel('Filter by name').hover()
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+
   // filter and select a peak: its apex becomes the selection
   await panel.getByLabel('Filter by name').fill('tol')
   await expect(panel).toContainText(`1 of ${table.rows.length} peaks`)
