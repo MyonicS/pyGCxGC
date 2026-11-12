@@ -588,7 +588,10 @@ def create_app(session: Session, token: str, port: int, static_dir: Path | None 
 
     @api.patch("/libraries/{library_id}", response_model=S.LibraryInfo)
     def update_library(library_id: str, req: S.LibraryUpdate):
-        session.set_library_active(library_id, req.active, req.exclusive)
+        if req.redistributable is not None:
+            session.set_library_redistributable(library_id, req.redistributable)
+        if req.active is not None:
+            session.set_library_active(library_id, req.active, req.exclusive)
         return session.library(library_id).info()
 
     @api.delete("/libraries/{library_id}", status_code=204)

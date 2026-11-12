@@ -749,7 +749,52 @@ def test_old_npz_cache_still_loads(tmp_path):
     # converted caches are keyed by the cache version, so old ones rebuild
     msp = tmp_path / "lib.msp"
     lib.to_msp(msp)
-    assert libmod.CACHE_VERSION == 3
+    assert libmod.CACHE_VERSION == 4
     cache = libmod.library_cache_file(msp, tmp_path / "cache")
     load_library(msp, cache_dir=tmp_path / "cache")
     assert cache.exists()
+
+
+# ------------------------------------------------------------------ library origin
+def test_library_origin_defaults(tmp_path):
+    lib = _lib_from_dict()
+    assert (lib.origin, lib.redistributable) == ("user", False)
+    lib.set_origin("mona")
+    assert lib.redistributable
+    path = lib.save(tmp_path / "mona.npz")
+    back = SpectralLibrary.load(path)
+    assert (back.origin, back.redistributable) == ("mona", True)
+    # merging keeps a library redistributable only if both parts are
+    assert not lib.merge(_lib_from_dict()).redistributable
+    # NIST records are recognised whatever the caller says
+    nist = _lib_from_dict()
+    nist.source[:] = "NIST"
+    nist.set_origin("mona", redistributable=True)
+    assert (nist.origin, nist.redistributable) == ("nist", False)
+    exported = _lib_from_dict()  # e.g. an MSP export from lib2nist
+    exported.nist_no[:] = np.arange(1, len(exported) + 1)
+    exported.set_origin(None)
+    assert exported.origin == "nist"
+
+
+def test_old_npz_is_not_redistributable(tmp_path):
+    lib = _lib_from_dict()
+    lib.set_origin("mona")
+    path = lib.save(tmp_path / "lib.npz")
+    with np.load(path) as z:
+        arrays = {k: z[k] for k in z.files if k != "meta"}
+    arrays["version"] = np.array([3])
+    np.savez(path, **arrays)
+    old = SpectralLibrary.load(path)
+    assert (old.origin, old.redistributable) == ("user", False)
+
+
+def test_load_library_stores_origin(tmp_path):
+    msp = tmp_path / "mona_gcms.msp"
+    _lib_from_dict().to_msp(msp)
+    cache = tmp_path / "cache"
+    assert not load_library(msp, cache_dir=cache).redistributable
+    # the cache converted without an origin is updated, not trusted
+    lib = load_library(msp, cache_dir=cache, origin="mona")
+    assert (lib.origin, lib.redistributable) == ("mona", True)
+    assert load_library(msp, cache_dir=cache).origin == "mona"

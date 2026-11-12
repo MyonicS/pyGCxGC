@@ -130,6 +130,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "structures": {"online": "ask"},
     "fid": {"modulation_time": None},
     "libraries": [],
+    "redistributable_libraries": [],  # paths marked by the user (SAFE-7)
+    "mcp": {"allow_user_labels": False},  # spec CLS-18
     "recent_files": [],
 }
 
@@ -783,6 +785,23 @@ class LibraryRecord:
     library: SpectralLibrary | None = None
     error: str | None = None
     cache_file: str | None = None
+    # marked redistributable by the user (settings, by path; never for NIST)
+    user_redistributable: bool = False
+
+    @property
+    def origin(self) -> str | None:
+        """``nist``, ``mona`` or ``user`` once loaded (spec SAFE-7)."""
+        if self.library is not None:
+            return self.library.origin
+        return "nist" if self.source == "nist" else None
+
+    @property
+    def redistributable(self) -> bool:
+        """Whether the library's content may leave the machine (spec SAFE-3)."""
+        lib = self.library
+        if lib is None or lib.origin == "nist":
+            return False
+        return lib.redistributable or self.user_redistributable
 
     def info(self) -> dict:
         cached = bool(self.cache_file and Path(self.cache_file).exists())
@@ -795,6 +814,8 @@ class LibraryRecord:
             "active": self.active,
             "n_spectra": len(self.library) if self.library is not None else None,
             "licence": LICENCES.get(self.source, ""),
+            "origin": self.origin,
+            "redistributable": self.redistributable,
             "cache_file": self.cache_file,
             "cached": cached,
             "error": self.error,
@@ -2092,6 +2113,8 @@ class Session:
                     )
         source = "mona" if download else library_source(path)
         name = "MoNA GC-MS" if download else Path(path).name
+        # the file download_mona_gcms wrote is MoNA, whatever its name says
+        origin = "mona" if download or Path(path) == self._mona_file() else None
         rec = LibraryRecord(_new_id(), "" if download else str(path), source, name)
         with self._lock:
             self.libraries[rec.id] = rec
@@ -2102,9 +2125,7 @@ class Session:
                 target = Path(path) if not download else None
                 if download:
                     job.report(0.0, "Downloading MoNA GC-MS (about 9 MB)")
-                    target = download_mona_gcms(
-                        (self.cache_dir / "mona_gcms.zip") if self.cache_dir else None
-                    )
+                    target = download_mona_gcms(self._mona_file())
                     rec.path = str(target)
                 job.check()
                 with contextlib.suppress(OSError, ValueError):
@@ -2116,12 +2137,16 @@ class Session:
                     target,
                     cache_dir=self.cache_dir,
                     progress=lambda f: job.report(0.95 * f),
+                    origin=origin,
                 )
             except Exception as exc:
                 rec.status, rec.error = "failed", _error_text(exc)
                 self.emit("library.updated", None, library=rec.info())
                 raise
             rec.library, rec.status = library, "ready"
+            rec.user_redistributable = rec.path in self.settings.get(
+                "redistributable_libraries", []
+            )
             if not download:
                 rec.name = library.name
             saved = [p for p in self.settings.get("libraries", []) if p != rec.path]
@@ -2151,6 +2176,40 @@ class Session:
         else:
             self.emit("library.updated", None, library=rec.info())
         return self.submit("library", rec.name, lambda _j: {"library_id": rec.id})
+
+    def _mona_file(self) -> Path:
+        """Where :meth:`add_library` saves the MoNA download."""
+        return (self.cache_dir or default_cache_dir()).resolve() / "mona_gcms.zip"
+
+    def set_library_redistributable(self, library_id: str, value: bool) -> None:
+        """
+        Mark a library as redistributable, or not (spec SAFE-7).
+
+        The mark is stored in the settings by path. Libraries of origin
+        ``nist`` are never redistributable. Not available to agents.
+        """
+        rec = self.library(library_id)
+        if rec.library is None:
+            raise InvalidRequest(f"Library {rec.name} is not loaded")
+        if value and rec.origin == "nist":
+            raise InvalidRequest(
+                f"{rec.name} is a NIST library, whose licence forbids redistribution"
+            )
+        if value and not rec.path:
+            raise InvalidRequest(
+                "Only libraries loaded from a file can be marked; set "
+                "library.set_origin(..., redistributable=True) in Python"
+            )
+        rec.user_redistributable = bool(value)
+        paths = [
+            p
+            for p in self.settings.get("redistributable_libraries", [])
+            if p != rec.path
+        ]
+        if value:
+            paths.append(rec.path)
+        self.settings.update({"redistributable_libraries": paths})
+        self.emit("library.updated", None, library=rec.info())
 
     def restore_libraries(self) -> list[Job]:
         """Load the libraries saved in the settings (at start-up)."""

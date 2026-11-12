@@ -18,6 +18,7 @@ import functools
 import hashlib
 import io
 import itertools
+import json
 import os
 import re
 import sys
@@ -42,8 +43,11 @@ META_FIELDS = (
     "nist_structure",
 )
 _INT_FIELDS = ("mw", "nist_no", "db_no", "pubchem_cid")
-CACHE_VERSION = 3  # 2: smiles, inchi, inchikey, pubchem_cid; 3: nist_structure
-_READABLE_CACHE_VERSIONS = (1, 2, 3)
+# 2: smiles, inchi, inchikey, pubchem_cid; 3: nist_structure; 4: origin and
+# redistributable flag (``meta``)
+CACHE_VERSION = 4
+_READABLE_CACHE_VERSIONS = (1, 2, 3, 4)
+ORIGINS = ("nist", "mona", "user")
 
 
 def default_cache_dir() -> Path:
@@ -99,13 +103,27 @@ class SpectralLibrary:
         ``mz[offsets[i]:offsets[i + 1]]``.
     name : str, optional
         Name of the library, shown in the GUI.
+    meta : dict, optional
+        Library-level metadata. ``origin`` (``"nist"``, ``"mona"`` or
+        ``"user"``) and ``redistributable`` tell whether the library's
+        content may leave the machine (spec SAFE-7). Without them the origin
+        is inferred from the entries (NIST records are recognised) and the
+        library is not redistributable.
     **metadata
         Per spectrum lists for the fields in ``META_FIELDS`` (compound names
         are passed as ``compound_name``). Missing fields are filled with
         empty values.
     """
 
-    def __init__(self, mz, intensity, offsets, name: str = "library", **metadata):
+    def __init__(
+        self,
+        mz,
+        intensity,
+        offsets,
+        name: str = "library",
+        meta: dict | None = None,
+        **metadata,
+    ):
         self.mz = np.asarray(mz, dtype=np.uint16)
         self.intensity = np.asarray(intensity, dtype=np.float32)
         self.offsets = np.asarray(offsets, dtype=np.int64)
@@ -125,6 +143,8 @@ class SpectralLibrary:
             setattr(self, attr, values)
         self._search_cache: dict = {}
         self._structure_ids: dict[int, tuple[str, str]] = {}
+        self.meta: dict = dict(meta or {})
+        self.set_origin(self.meta.get("origin"), self.meta.get("redistributable"))
 
     # ------------------------------------------------------------------ basics
     def __len__(self) -> int:
@@ -178,6 +198,42 @@ class SpectralLibrary:
             self._structure_ids[index] = ids
         smiles, nist_key = self._structure_ids[index]
         return smiles, inchikey or nist_key
+
+    # ------------------------------------------------------------ licence
+    @property
+    def origin(self) -> str:
+        """``"nist"``, ``"mona"`` or ``"user"`` (see :meth:`set_origin`)."""
+        return self.meta["origin"]
+
+    @property
+    def redistributable(self) -> bool:
+        """Whether the library's content may be passed on (e.g. to an AI model)."""
+        return bool(self.meta["redistributable"])
+
+    def set_origin(self, origin: str | None, redistributable: bool | None = None):
+        """
+        Set where the library comes from and whether it is redistributable.
+
+        Parameters
+        ----------
+        origin : {"nist", "mona", "user"} or None
+            ``None`` infers it: libraries with NIST records (read from a NIST
+            folder, or MSP exports where most records have a NIST number) are
+            ``"nist"``, everything else ``"user"``.
+        redistributable : bool, optional
+            Defaults to ``True`` for MoNA and ``False`` otherwise. NIST
+            libraries are never redistributable.
+        """
+        if _looks_like_nist(self):
+            origin = "nist"  # whatever the caller says
+        elif origin is None:
+            origin = "user"
+        if origin not in ORIGINS:
+            raise ValueError(f"Unknown library origin {origin!r}; use {ORIGINS}")
+        if redistributable is None:
+            redistributable = origin == "mona"
+        self.meta["origin"] = origin
+        self.meta["redistributable"] = bool(redistributable) and origin != "nist"
 
     def name_of(self, index: int) -> str:
         """Compound name of spectrum ``index`` (stored as ``compound_name``)."""
@@ -290,6 +346,7 @@ class SpectralLibrary:
             data["intensity"],
             data["offsets"],
             name=name,
+            meta={"origin": "nist", "redistributable": False},
             **_meta_kwargs(meta),
         )
 
@@ -300,11 +357,16 @@ class SpectralLibrary:
         for field in META_FIELDS:
             a, b = getattr(self, _attr(field)), getattr(other, _attr(field))
             meta[field] = list(a) + list(b)
+        origins = {self.origin, other.origin}
         return SpectralLibrary(
             np.concatenate([self.mz, other.mz]),
             np.concatenate([self.intensity, other.intensity]),
             offsets,
             name=name or f"{self.name}+{other.name}",
+            meta={
+                "origin": origins.pop() if len(origins) == 1 else "user",
+                "redistributable": self.redistributable and other.redistributable,
+            },
             **_meta_kwargs(meta),
         )
 
@@ -316,6 +378,7 @@ class SpectralLibrary:
         arrays = {
             "version": np.array([CACHE_VERSION]),
             "lib_name": np.array([self.name]),
+            "meta": np.array([json.dumps(self.meta)]),
             "mz": self.mz,
             "intensity": self.intensity,
             "offsets": self.offsets,
@@ -349,11 +412,14 @@ class SpectralLibrary:
                     meta[field] = _unpack_strings(
                         z[f"{field}_blob"], z[f"{field}_offsets"]
                     )
+            # without a stored origin (version < 4): inferred, not redistributable
+            lib_meta = json.loads(str(z["meta"][0])) if "meta" in z else {}
             return cls(
                 z["mz"],
                 z["intensity"],
                 z["offsets"],
                 name=str(z["lib_name"][0]),
+                meta=lib_meta,
                 **_meta_kwargs(meta),
             )
 
@@ -611,13 +677,19 @@ def download_mona_gcms(dest: str | Path | None = None, timeout: float = 300) -> 
 
 
 # ------------------------------------------------------------------ loading
-def load_library(path: str | Path, cache_dir: str | Path | None = None, progress=None):
+def load_library(
+    path: str | Path,
+    cache_dir: str | Path | None = None,
+    progress=None,
+    origin: str | None = None,
+):
     """
     Load a spectral library from a NIST MAINLIB folder, an MSP file or a cache.
 
     NIST folders and MSP files are converted once and cached as ``.npz`` in
     ``cache_dir`` (default: :func:`default_cache_dir`), so later loads take
-    well under a second.
+    well under a second. The library's origin and ``redistributable`` flag
+    are stored in the cache (see :meth:`SpectralLibrary.set_origin`).
 
     Parameters
     ----------
@@ -628,12 +700,17 @@ def load_library(path: str | Path, cache_dir: str | Path | None = None, progress
         Where converted libraries are cached. ``False`` disables caching.
     progress : callable, optional
         ``progress(fraction)`` callback used while converting.
+    origin : {"mona", "user"}, optional
+        Origin of an MSP file (``"mona"`` makes it redistributable). NIST
+        folders are always ``"nist"``; ``.npz`` files keep the stored origin.
     """
     from pyGCxGC.ms.nist import find_nist_db, is_nist_library
 
     path = Path(path)
     if path.suffix.lower() == ".npz":
         return SpectralLibrary.load(path)
+    if origin is not None and origin not in ORIGINS:
+        raise ValueError(f"Unknown library origin {origin!r}; use {ORIGINS}")
     if is_nist_library(path):
         source = find_nist_db(path)
         lib_name = "NIST " + (source.parent.name if source.parent.name else "mainlib")
@@ -641,8 +718,12 @@ def load_library(path: str | Path, cache_dir: str | Path | None = None, progress
             SpectralLibrary.from_nist, source, name=lib_name, progress=progress
         )
     elif path.is_file():
-        source = path
-        builder = functools.partial(SpectralLibrary.from_msp, path)
+
+        def builder():
+            lib = SpectralLibrary.from_msp(path)
+            lib.set_origin(origin)
+            return lib
+
     else:
         raise FileNotFoundError(f"Not a NIST library folder or MSP file: {path}")
 
@@ -651,9 +732,16 @@ def load_library(path: str | Path, cache_dir: str | Path | None = None, progress
     cache_file = library_cache_file(path, cache_dir)
     if cache_file.exists():
         try:
-            return SpectralLibrary.load(cache_file)
+            lib = SpectralLibrary.load(cache_file)
         except Exception:
             cache_file.unlink(missing_ok=True)
+        else:
+            if origin is None or lib.origin in (origin, "nist"):
+                return lib
+            lib.set_origin(origin)  # e.g. a MoNA download cached as "user"
+            with contextlib.suppress(OSError):
+                lib.save(cache_file)
+            return lib
     lib = builder()
     with contextlib.suppress(OSError):
         lib.save(cache_file)
@@ -718,6 +806,15 @@ def _safe_int(value) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _looks_like_nist(lib: SpectralLibrary) -> bool:
+    """NIST records: read from a NIST folder, or most records carry a NIST number."""
+    if not len(lib):
+        return False
+    if np.any(lib.source == "NIST") or np.any(lib.nist_structure != ""):
+        return True
+    return bool(np.count_nonzero(lib.nist_no > 0) > 0.5 * len(lib))
 
 
 def _attr(field: str) -> str:

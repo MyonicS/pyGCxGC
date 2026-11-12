@@ -948,9 +948,32 @@
             "title": "Name",
             "type": "string"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "enum": [
+                  "nist",
+                  "mona",
+                  "user"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the library comes from (None while loading)",
+            "title": "Origin"
+          },
           "path": {
             "title": "Path",
             "type": "string"
+          },
+          "redistributable": {
+            "default": false,
+            "description": "Its content may leave the machine (never for NIST)",
+            "title": "Redistributable",
+            "type": "boolean"
           },
           "source": {
             "enum": [
@@ -994,18 +1017,34 @@
         "additionalProperties": false,
         "properties": {
           "active": {
-            "title": "Active",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
           },
           "exclusive": {
             "default": false,
             "title": "Exclusive",
             "type": "boolean"
+          },
+          "redistributable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mark the library redistributable (refused for NIST)",
+            "title": "Redistributable"
           }
         },
-        "required": [
-          "active"
-        ],
         "title": "LibraryUpdate",
         "type": "object"
       },

@@ -1105,3 +1105,60 @@ def test_value_labels(session, client, ms_files):
 
     header, _ = decode_array(r.content)
     assert header["value"]["quantity"] == "EIC m/z 91, 92"
+
+
+# ------------------------------------------------------------------ library origin
+def test_library_origin_and_redistributable_mark(session, tmp_path):
+    lib_path = lib_from_dict().save(tmp_path / "own.npz")
+    library_id = session.wait(session.add_library(lib_path))["library_id"]
+    info = session.library(library_id).info()
+    assert (info["origin"], info["redistributable"]) == ("user", False)
+    session.set_library_redistributable(library_id, True)
+    assert session.library(library_id).info()["redistributable"]
+    assert str(lib_path) in session.settings.get("redistributable_libraries")
+    # remembered for the next session
+    other = Session(settings_path=tmp_path / "app.json", cache_dir=tmp_path / "cache")
+    try:
+        rec_id = other.wait(other.add_library(lib_path))["library_id"]
+        assert other.library(rec_id).redistributable
+    finally:
+        other.close()
+    # in-memory libraries are not redistributable and cannot be marked
+    obj_id = session.wait(session.add_library(lib_from_dict()))["library_id"]
+    assert not session.library(obj_id).redistributable
+    with pytest.raises(InvalidRequest, match="file"):
+        session.set_library_redistributable(obj_id, True)
+    # NIST never
+    nist = lib_from_dict()
+    nist.source[:] = "NIST"
+    nist_path = nist.save(tmp_path / "nist.npz")
+    nist_id = session.wait(session.add_library(nist_path))["library_id"]
+    assert session.library(nist_id).info()["origin"] == "nist"
+    with pytest.raises(InvalidRequest, match="NIST"):
+        session.set_library_redistributable(nist_id, True)
+
+
+def test_mona_download_is_redistributable(session, monkeypatch, tmp_path):
+    import pyGCxGC.app.session as session_mod
+
+    def fake_download(dest):
+        msp = tmp_path / "mona.msp"
+        lib_from_dict().to_msp(msp)
+        import zipfile
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, "w") as zf:
+            zf.write(msp, "MoNA.msp")
+        return dest
+
+    monkeypatch.setattr(session_mod, "download_mona_gcms", fake_download)
+    library_id = session.wait(session.add_library("mona"))["library_id"]
+    rec = session.library(library_id)
+    assert (rec.origin, rec.redistributable) == ("mona", True)
+    # restored from the settings (a path, not "mona"): still MoNA
+    other = Session(settings_path=tmp_path / "app.json", cache_dir=tmp_path / "cache")
+    try:
+        (job,) = other.restore_libraries()
+        assert other.library(other.wait(job)["library_id"]).redistributable
+    finally:
+        other.close()

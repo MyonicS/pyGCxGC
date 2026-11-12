@@ -1083,8 +1083,19 @@ export interface components {
             n_spectra: number | null;
             /** Name */
             name: string;
+            /**
+             * Origin
+             * @description Where the library comes from (None while loading)
+             */
+            origin?: ("nist" | "mona" | "user") | null;
             /** Path */
             path: string;
+            /**
+             * Redistributable
+             * @description Its content may leave the machine (never for NIST)
+             * @default false
+             */
+            redistributable: boolean;
             /**
              * Source
              * @enum {string}
@@ -1101,12 +1112,17 @@ export interface components {
         /** LibraryUpdate */
         LibraryUpdate: {
             /** Active */
-            active: boolean;
+            active?: boolean | null;
             /**
              * Exclusive
              * @default false
              */
             exclusive: boolean;
+            /**
+             * Redistributable
+             * @description Mark the library redistributable (refused for NIST)
+             */
+            redistributable?: boolean | null;
         };
         /** LocalBaseline */
         LocalBaseline: {

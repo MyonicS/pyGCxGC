@@ -167,6 +167,12 @@ class LibraryInfo(Info):
     active: bool
     n_spectra: int | None
     licence: str
+    origin: Literal["nist", "mona", "user"] | None = Field(
+        None, description="Where the library comes from (None while loading)"
+    )
+    redistributable: bool = Field(
+        False, description="Its content may leave the machine (never for NIST)"
+    )
     cache_file: str | None
     cached: bool
     error: str | None
@@ -179,8 +185,11 @@ class LibraryAdd(Model):
 
 
 class LibraryUpdate(Model):
-    active: bool
+    active: bool | None = None
     exclusive: bool = False
+    redistributable: bool | None = Field(
+        None, description="Mark the library redistributable (refused for NIST)"
+    )
 
 
 # ------------------------------------------------------------------ session
