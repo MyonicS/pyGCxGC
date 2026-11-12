@@ -60,7 +60,7 @@ export interface PeakRow {
   nist_no: number
   library: string
   baseline: string
-  assigned_by: '' | 'library' | 'user'
+  assigned_by: '' | 'library' | 'user' | 'agent'
   category: string
 }
 

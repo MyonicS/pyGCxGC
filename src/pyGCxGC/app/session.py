@@ -39,6 +39,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import csv
+import hashlib
 import io
 import itertools
 import json
@@ -139,6 +140,7 @@ PROJECT_VERSION = 2  # 2: "not set" solvent cut-offs, labels, class scheme
 PROJECT_SUFFIX = ".gcxgc"
 CLASSES_SUFFIX = ".classes.json"
 PROJECT_HITS = 10  # hits per peak saved in projects
+EDITORS = ("user", "agent")  # who can edit a peak's identity (assigned_by)
 IDENTITY_COLUMNS = (
     "name",
     "match",
@@ -550,6 +552,8 @@ class Document:
         self.view: dict | None = None
         # delay estimates with this document as the target, by source id (ALN-3)
         self.delay_estimates: dict[str, dict] = {}
+        # state key when last saved in or opened from a project (TOOL-16)
+        self.saved_state: str | None = None
 
     @property
     def grid(self) -> Grid:
@@ -1175,6 +1179,45 @@ class Session:
                 self._active_id = None
         self.emit("document.updated", doc.id, change="closed", document=None)
 
+    def unsaved_changes(self, document_id: str) -> list[str]:
+        """
+        What closing a document would lose: masks, labels or a delay
+        correction that are not saved in a project (spec TOOL-16). Empty when
+        there is nothing of the kind, or it is as last saved or opened.
+        """
+        doc = self.document(document_id)
+        if doc.saved_state is not None and doc.saved_state == self._state_key(doc):
+            return []
+        with doc.lock:
+            out = []
+            if len(doc.masks):
+                out.append(f"{len(doc.masks)} masks")
+            if isinstance(doc, MSDocument) and doc.peaks is not None:
+                if "category" in doc.peaks:
+                    n = int((doc.peaks["category"].fillna("") != "").sum())
+                    if n:
+                        out.append(f"labels of {n} peaks")
+                if doc._params.shift:
+                    out.append(f"a phase shift of {doc._params.shift} scans")
+            if doc.delay_estimates:
+                out.append(f"{len(doc.delay_estimates)} delay estimates")
+        return out
+
+    @staticmethod
+    def _state_key(doc: Document) -> str:
+        """Digest of what a project stores of a document's work."""
+        with doc.lock:
+            state: dict[str, Any] = {
+                "params": asdict(doc._params),
+                "masks": doc.masks.to_dict(),
+                "delays": doc.delay_estimates,
+            }
+            if isinstance(doc, MSDocument) and doc.peaks is not None:
+                cols = [c for c in ("peak_id", *LABEL_COLUMNS) if c in doc.peaks]
+                state["labels"] = doc.peaks[cols].to_json(orient="values")
+        text = json.dumps(state, sort_keys=True, default=str)
+        return hashlib.sha1(text.encode()).hexdigest()
+
     def update_document(
         self, document_id: str, params: dict | None = None, **kw
     ) -> Job:
@@ -1639,7 +1682,7 @@ class Session:
                 old = doc.peaks.copy()
                 old_hits = dict(doc.peak_hits)
             records = self.active_libraries()
-            user = (old["assigned_by"] == "user").to_numpy()
+            user = old["assigned_by"].isin(EDITORS).to_numpy()
             found, hits = self._identify(job, data, old.copy(), records, n_average)
             table = old.copy()
             for col in IDENTITY_COLUMNS:
@@ -1755,6 +1798,7 @@ class Session:
         delete: bool = False,
         category: str | None = None,
         hits: str = "peak",
+        by: str = "user",
     ) -> None:
         """
         Edit a peak: rename it, assign one of its hits, set its category or
@@ -1770,11 +1814,19 @@ class Session:
         hits : {"peak", "selection"}, default "peak"
             Where ``hit_rank`` points: the peak's own hits, or the hits of
             the current selection (the app's Hits panel).
+        by : {"user", "agent"}, default "user"
+            Who edits the identity (``assigned_by``); the MCP server passes
+            ``agent``. Re-identification keeps both. A category is always a
+            user label (agents label with :meth:`set_categories`).
         """
         doc = self.document(document_id, "ms")
         assert isinstance(doc, MSDocument)
         if hits not in ("peak", "selection"):
             raise InvalidRequest("hits must be 'peak' or 'selection'")
+        if by not in EDITORS:
+            raise InvalidRequest("by must be 'user' or 'agent'")
+        if category is not None and by != "user":
+            raise InvalidRequest("Agents label peaks with set_categories")
         with doc.lock:
             if doc.peaks is None:
                 raise InvalidRequest("No peak table: detect peaks first")
@@ -1814,10 +1866,10 @@ class Session:
                         if col in table:
                             table[col] = table[col].astype(object)
                             table.loc[row, col] = value
-                    table.loc[row, "assigned_by"] = "user"
+                    table.loc[row, "assigned_by"] = by
                 if name is not None:
                     table.loc[row, "name"] = name
-                    table.loc[row, "assigned_by"] = "user"
+                    table.loc[row, "assigned_by"] = by
                 if category is not None:
                     add_label_columns(table)
                     self._write_label(
@@ -2040,6 +2092,7 @@ class Session:
         from_document: str | None = None,
         mask_set: dict | MaskSet | None = None,
         replace_all: bool = False,
+        mask_ids: list[str] | None = None,
     ) -> list[str]:
         """
         Import masks from a file (``.gcxgc-masks.json``, a ``.tif`` or a folder
@@ -2047,14 +2100,21 @@ class Session:
 
         The masks are rasterised on the document first, so a raster mask that
         does not fit the chromatogram is reported and nothing changes.
+        ``mask_ids`` (ids or names) picks masks of ``from_document``.
         """
         doc = self.document(document_id)
         sources = sum(x is not None for x in (path, from_document, mask_set))
         if sources != 1:
             raise InvalidRequest("Give exactly one of path, from_document or mask_set")
+        if mask_ids is not None and from_document is None:
+            raise InvalidRequest("mask_ids picks masks of from_document")
         try:
             if from_document is not None:
-                incoming = self.document(from_document).masks.copy()
+                source_doc = self.document(from_document)
+                incoming = source_doc.masks.copy()
+                if mask_ids is not None:
+                    keep = {self._mask(source_doc, m).id for m in mask_ids}
+                    incoming.masks = [m for m in incoming if m.id in keep]
             elif isinstance(mask_set, MaskSet):
                 incoming = mask_set.copy()
             elif mask_set is not None:
@@ -2911,17 +2971,7 @@ class Session:
                 raise NotFound(f"No peak {peak_id}")
             row = rows.iloc[0].to_dict()
             hits = list(doc.peak_hits.get(int(peak_id)) or [])[: max(int(n), 1)]
-        builtin = ClassScheme.builtin()
-        ev = evidence(row, hits, None, self._library_objects())
-        out = []
-        for k, h in enumerate(hits):
-            d = hit_dict(h)
-            cls = next((c for c in builtin if c.rule.hit_matches(ev, k)), None)
-            d["class"] = cls.name if cls else None
-            d["subclass"] = cls.subclass_of(ev, k) if cls else None
-            rec = self.libraries.get(h.extra.get("library_id", ""))
-            d["redistributable"] = bool(rec and rec.redistributable)
-            out.append(d)
+        out = self.classify_hits(hits, row)
         note = None
         if hits and hits[0].probability is None:
             params = self.search_parameters(doc.data.mass_range)
@@ -2934,6 +2984,24 @@ class Session:
             "hits": out,
             "probability_note": note,
         }
+
+    def classify_hits(self, hits: list[Hit], row: dict | None = None) -> list[dict]:
+        """
+        Hits as dicts with the class and subclass the built-in rules give
+        each hit, and whether its library is redistributable (spec CLS-8).
+        """
+        builtin = ClassScheme.builtin()
+        ev = evidence(row or {}, hits, None, self._library_objects())
+        out = []
+        for k, h in enumerate(hits):
+            d = hit_dict(h)
+            cls = next((c for c in builtin if c.rule.hit_matches(ev, k)), None)
+            d["class"] = cls.name if cls else None
+            d["subclass"] = cls.subclass_of(ev, k) if cls else None
+            rec = self.libraries.get(h.extra.get("library_id", ""))
+            d["redistributable"] = bool(rec and rec.redistributable)
+            out.append(d)
+        return out
 
     # ------------------------------------------------------------ regions (spec mcp.md §6, §7)
     def mask_from_peaks(
@@ -4246,6 +4314,9 @@ class Session:
         except OSError as exc:
             raise InvalidRequest(f"Cannot write {path}: {exc}") from exc
         self.project_path = str(path.resolve())
+        for doc in list(self.documents.values()):
+            if doc.path:
+                doc.saved_state = self._state_key(doc)
         self._remember_file(self.project_path)
         log.info("Saved project %s", path)
         info = self.project_info()
@@ -4346,6 +4417,8 @@ class Session:
             layouts = project.get("ui", {}).get("layouts")
             if isinstance(layouts, dict) and layouts:
                 self.settings.update({"ui": {"layouts": layouts}})
+            for _, doc in opened:
+                doc.saved_state = self._state_key(doc)
             ids = {entry.get("id"): doc.id for entry, doc in opened}
             if project.get("active_document") in ids:
                 self.set_active_document(ids[project["active_document"]])
@@ -4629,6 +4702,16 @@ def _project_path(path: str, base: Path | None) -> dict:
         with contextlib.suppress(ValueError):  # another drive (Windows)
             relative = Path(os.path.relpath(p, base)).as_posix()
     return {"path": relative or str(p), "absolute_path": str(p)}
+
+
+def project_files(path: str | Path) -> list[Path]:
+    """The chromatogram and library files a project would open (those found)."""
+    path = Path(path).expanduser()
+    project = read_project(path)
+    base = path.resolve().parent
+    found = [_project_file(e, base) for e in project.get("documents", [])]
+    found += [_project_file(e, base, "any") for e in project.get("libraries", [])]
+    return [p for p in found if p is not None]
 
 
 def _project_file(entry: dict, base: Path, kind: str = "file") -> Path | None:
