@@ -72,7 +72,8 @@ files you change, and do not reformat untouched legacy code.
 | `frontend/e2e/` | Playwright tests; `backend.py` serves a session with the example FID and a synthetic MS run |
 | `scripts/export_*.py` | Generated frontend inputs: colour maps, OpenAPI snapshot, matplotlib interpolation reference |
 | `specs/app.md` | Specification of the new desktop/web app (React frontend on a FastAPI session layer). Read it before working on `frontend/`, `desktop/` or `pyGCxGC.app` |
-| `docs/roadmap.md` | Planned features beyond the app: group-type/region classification, agent skills and MCP server |
+| `specs/mcp.md` | Specification of the MCP server (agent interface), peak classification, masks from peaks and rendering (not implemented yet) |
+| `docs/roadmap.md` | Planned features beyond the app: group-type/region classification and the MCP server |
 
 ## Conventions
 

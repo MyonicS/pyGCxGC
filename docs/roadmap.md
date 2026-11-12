@@ -4,9 +4,7 @@
 
 A modern desktop and web application replaces the two Tk tools (mask creator
 and GCxGC-MS viewer). It runs on the Python library, ships as installers for
-Windows, macOS and Linux, and can be opened from notebooks. The full
-specification is in
-[`specs/app.md`](https://github.com/MyonicS/pyGCxGC/blob/main/specs/app.md).
+Windows, macOS and Linux, and can be opened from notebooks.
 
 The two backend features below come after the app. The app already reserves
 hooks for them: mask categories, a plugin registry, and a `Session` API that
@@ -87,54 +85,46 @@ with the existing mask integration.
 * **Validation.** Compare with hand-drawn masks on reference samples, and
     report the differences in class fractions.
 
-## Agent interface: skills and an MCP server
+## Agent interface: an MCP server
 
-The goal is that an AI agent can process GCxGC data for the user. Typical
-tasks:
+The goal is that an AI agent can process GCxGC data for the user. The
+acceptance example is *"What fraction of the FID chromatogram is
+monoaromatics?"*, answered from a GCxGC-FID run and a GCxGC-MS run of the
+same sample: the agent opens both runs, sets the solvent cut-offs, corrects
+the RT2 delay between the detectors, detects and identifies the MS peaks,
+labels them by class, draws a mask from the labelled peaks, copies it to the
+FID run and integrates.
 
-* load runs;
-* check modulation, phase shift and wrap-around;
-* detect and identify peaks;
-* apply templates or masks and integrate;
-* compare samples;
-* write a short report with figures.
+`pygcxgc mcp` is a local MCP server (official Python MCP SDK, stdio), tested
+with Claude Code and opencode. Its tools are thin wrappers around the app's
+`Session`, so with `--gui`, or when attached to a running app, the GC²
+window shows every step live and the user can correct it. All guidance
+(server instructions, workflow guides as MCP resources, a prompt) ships with
+the server, so nothing else has to be installed.
 
-This is planned in two steps: agent skills first, then an MCP server.
+New core code, usable from Python and the app as well:
 
-### Step 1: agent skills
-
-Skills need no infrastructure. They live in `agents/skills/<name>/SKILL.md`,
-each with small scripts that use the public Python API, and produce CSV and
-PNG files plus a Markdown summary. Examples:
-
-* `gcxgc-qc`: modulation estimate, phase, saturation, solvent region;
-* `gcxgc-identify`: peak table with identifications and flagged low-quality
-  matches;
-* `gcxgc-group-type`: apply a template and report class fractions;
-* `gcxgc-compare`: differences between runs.
-
-### Step 2: MCP server
-
-`pyGCxGC.mcp` uses the official Python MCP SDK, with stdio for local agents.
-Its tools map one-to-one onto the app's `Session` methods, so when it is
-connected to a running app, the GUI shows what the agent does live:
-
-* `open_run`, `describe_run`;
-* `render_chromatogram`, which returns a PNG so agents that read images can
-  look at the data;
-* `get_spectrum`, `search_library`;
-* `detect_peaks`, `identify_peaks`, `get_peak_table`;
-* `apply_mask_set`, `integrate`;
-* `export`.
+* peak classification: the agent labels peaks from evidence cards, built-in
+  and agent-written rules propose labels and make them reproducible;
+* masks from labelled peaks, with coverage and purity reports;
+* the RT2 delay between two runs, estimated by cross-correlation;
+* a match probability per library hit (lead over the competing compounds,
+  calibrated like NIST's "Prob %");
+* rendering of chromatograms with masks and peaks as PNG images.
 
 ### Guardrails
 
+* Every result carries a grade, "exploratory" or "reportable", computed from
+  the review status, the delay correction and the processing. The agent
+  cannot set it.
+* Labels record their source (rule, agent, user); user labels win.
 * Tool results stay small: summaries, the top N rows, and file paths for
-  anything large.
-* Long jobs return a job id with progress.
-* Writes are restricted to an output folder.
-* Licensed library content is never returned in bulk: only hits, never whole
-  library spectra.
+  anything large. Long jobs return a job id with progress.
+* The server reads only below allowed folders and writes only to an output
+  folder. These checks run in the server, whatever the client allows.
+* Licensed libraries (NIST) never leave the machine: the agent gets hit
+  names, formulas, CAS numbers and match values, never library spectra or
+  structures.
 
 ## Other planned work
 
