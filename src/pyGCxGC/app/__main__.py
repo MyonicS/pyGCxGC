@@ -7,7 +7,8 @@ the web browser. ``--headless`` only serves: it prints ``READY <port>`` on
 stdout once the server is listening, followed by the URL with the token (used
 by the desktop shell). The token can be passed with ``--token`` or the
 ``PYGCXGC_TOKEN`` environment variable. Files ending in ``.gcxgc`` are
-opened as projects.
+opened as projects. ``gc-squared mcp ...`` starts the MCP server instead
+(:mod:`pyGCxGC.mcp.__main__`).
 """
 
 from __future__ import annotations
@@ -43,6 +44,11 @@ def replaces_legacy_tool(tool: str, app_args: list[str]) -> int | None:
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["mcp"]:  # pygcxgc mcp ...: the MCP server (spec mcp.md)
+        from pyGCxGC.mcp.__main__ import main as mcp_main
+
+        return mcp_main(argv[1:])
     parser = argparse.ArgumentParser(
         prog="gc-squared", description="GC², the pyGCxGC app (local only)"
     )

@@ -7,17 +7,18 @@ masks/integration and GCxGC-MS with spectral library search.
 ## Setup and commands
 
 ```bash
-uv sync --extra dev --extra app   # creates .venv (Python >= 3.10)
+uv sync --extra dev --extra app --extra mcp   # creates .venv (Python >= 3.10)
 uv pip install -e .               # needed for the console scripts
 .venv/bin/python -m pytest tests -q
 .venv/bin/ruff check src/pyGCxGC/ms src/pyGCxGC/app src/pyGCxGC/masks.py \
     src/pyGCxGC/regions src/pyGCxGC/render.py \
     src/pyGCxGC/gui/ms_viewer.py tests/test_ms.py tests/test_masks.py \
     tests/test_app.py tests/test_notebook.py tests/test_structures.py tests/synthetic.py \
-    tests/test_regions.py tests/test_labels.py
+    tests/test_regions.py tests/test_labels.py src/pyGCxGC/mcp tests/test_mcp.py
 .venv/bin/ruff format <files you touched>
 .venv/bin/pygcxgc [file|project.gcxgc] [-l LIBRARY]   # = python -m pyGCxGC.app; opens a pywebview window or the browser
 .venv/bin/pygcxgc --headless                        # serve only: prints READY <port> and the URL with the token
+.venv/bin/pygcxgc mcp [files] [-l LIB] [--output DIR] [--allow-read DIR] [--gui]   # MCP server (stdio)
 ```
 
 Frontend (`frontend/`, pnpm, Node >= 22):
@@ -53,6 +54,7 @@ files you change, and do not reformat untouched legacy code.
 | `src/pyGCxGC/ms/peaks.py` | 2D peak detection (local maxima + nearest-apex blob volumes) and batch identification |
 | `src/pyGCxGC/regions/` | `classes` (labels, rule language, `ClassScheme`, built-in `schemes/hydrocarbon-group-type.json`, evidence cards), `from_peaks` (band/hull masks and their report), `alignment` (RT2 delay, solvent cut-off suggestion), `grade` (exploratory/reportable) |
 | `src/pyGCxGC/render.py` | `render_chromatogram`: deterministic matplotlib (Agg) PNG with masks, peaks and a text caption |
+| `src/pyGCxGC/mcp/` | MCP server (`pygcxgc mcp`, `mcp` extra): `server.py` (the 37 tools, instructions, guides as resources, the `group-type-area` prompt, `Gui`), `guard.py` (read/write roots, output limits, library redaction), `__main__.py` (command line), `guides/*.md` |
 | `scripts/calibrate_match_probability.py` | Fits the temperature of the match probability on distorted library spectra (NIST if present); prints aggregates only |
 | `src/pyGCxGC/ms/structures.py` | Structure resolver: library identifiers, then opt-in PubChem (`PubChem`, rate limited), SQLite `StructureCache`, RDKit `depict_svg` |
 | `src/pyGCxGC/gui/ms_viewer.py` | Tk GCxGC-MS viewer (`pygcxgc-msviewer`, `pyGCxGC.launch_ms_viewer`); drawing only, all logic goes through a `Session` |
@@ -67,6 +69,7 @@ files you change, and do not reformat untouched legacy code.
 | `tests/test_notebook.py` | Milestone 4: projects, settings migration and logs, active document, view state, the viewer (real server thread) and `pygcxgc --headless` |
 | `tests/test_structures.py` | Structure resolver and cache with a stubbed PubChem (`pubchem()` is reused by `test_app.py` and `e2e/backend.py`) |
 | `tests/synthetic.py` | Synthetic GCxGC-MS run, test library and ANDI writer shared by the tests; `synthetic_pair()`: MS + FID run of one sample (alkanes, a monoaromatic band, diaromatics, phenol, solvent, MS 0.5 s later), `pair_library()` with SMILES, `write_fid_csv` |
+| `tests/test_mcp.py` | Every tool through the SDK's in-memory client, the scripted workflow (WF-1), the guards and the library-leak test, and `pygcxgc mcp` over stdio |
 | `tests/test_regions.py`, `tests/test_labels.py` | Core of `regions` and `render` on the synthetic pair; the `Session` methods for labels, review, rules, masks from peaks, delay, grade and projects |
 | `docs/example_docs/gui/ms_viewer.md` | User documentation of the MS features |
 | `frontend/src/api/` | Transport (HTTP + WebSocket, spec NB-4), typed client, binary array decoder; `schema.d.ts` is generated |
@@ -78,7 +81,7 @@ files you change, and do not reformat untouched legacy code.
 | `frontend/e2e/` | Playwright tests; `backend.py` serves a session with the example FID and a synthetic MS run |
 | `scripts/export_*.py` | Generated frontend inputs: colour maps, OpenAPI snapshot, matplotlib interpolation reference |
 | `specs/app.md` | Specification of the new desktop/web app (React frontend on a FastAPI session layer). Read it before working on `frontend/`, `desktop/` or `pyGCxGC.app` |
-| `specs/mcp.md` | Specification of the MCP server (agent interface), peak classification, masks from peaks and rendering (not implemented yet) |
+| `specs/mcp.md` | Specification of the MCP server (agent interface), peak classification, masks from peaks and rendering (milestones 1 and 2 implemented) |
 | `docs/roadmap.md` | Planned features beyond the app: group-type/region classification and the MCP server |
 
 ## Conventions
@@ -173,6 +176,24 @@ files you change, and do not reformat untouched legacy code.
   without `discard_labels=True`. Project class schemes are saved as
   `<project>.classes.json` next to the project; projects also store the top
   10 hits per peak (metadata only) and the delay estimates.
+* **MCP server.** The SDK is `mcp` 2.x: FastMCP is `MCPServer`
+  (`mcp.server.mcpserver`); tests use `mcp.client.Client(server)` in memory or
+  `Client(StdioServerParameters(...))`. The SDK imports uvicorn and starlette
+  itself, so MCP-3 means pyGCxGC never imports FastAPI or `app.server`
+  without the GUI. While serving stdio the SDK points file descriptor 1 at
+  stderr (the legacy FID parser prints), so start-up work runs in the
+  server's lifespan and `sys.stdout` must never be replaced. `server.py` does
+  not use `from __future__ import annotations` (the SDK reads the annotations
+  for the schemas). Every tool returns `ToolResult` (`CallToolResult` with a
+  `dict` output schema): structured content plus a text block with a summary
+  line and the JSON, because clients differ in which one they show.
+  Non-redistributable libraries are redacted to `guard.HIT_FIELDS`, also in
+  the peak CSVs the server writes (the agent can read the output folder).
+  Agent identity edits are `assigned_by = "agent"` (re-identification keeps
+  user and agent edits); labels always go through `set_categories`.
+  `close_document` refuses while `Session.unsaved_changes` is not empty (a
+  digest of masks, labels and delays, stored when a project is saved or
+  opened).
 * `Session.edit_peak(hit_rank=)` takes the peak's own hits by default; the
   HTTP route passes `hits="selection"` (the default of `PeakEdit.hits`),
   because the app's "Assign to peak" button sends the rank shown in the Hits

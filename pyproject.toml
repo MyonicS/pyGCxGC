@@ -43,6 +43,7 @@ app = [
     "platformdirs>=4",
     "rdkit>=2024.3",
 ]
+mcp = ["mcp>=1.12", "rdkit>=2024.3", "platformdirs>=4"]
 docs = [
     "mkdocs-material>=9.4.0",
     "mkdocstrings[python]>=0.22.0",
@@ -67,7 +68,7 @@ pygcxgc-maskcreator = "pyGCxGC.mask_gui:main"
 pygcxgc-msviewer = "pyGCxGC.gui.ms_viewer:main"
 
 [tool.setuptools.package-data]
-pyGCxGC = ["py.typed", "app/static/**/*", "ms/*.json", "regions/schemes/*.json"]
+pyGCxGC = ["py.typed", "app/static/**/*", "ms/*.json", "regions/schemes/*.json", "mcp/guides/*.md"]
 
 [tool.pyright]
 include = ["pyGCxGC"]
